@@ -1,0 +1,10 @@
+# Alojamento na Netlify (Next.js com o adaptador oficial, instalado automaticamente).
+# Base de dados: DATABASE_URL de um Postgres na UE (por exemplo Supabase em Frankfurt).
+# Variáveis a definir no painel (Site configuration › Environment variables), nunca aqui:
+#   DATABASE_URL (ligação via pooler), SESSION_SECRET (32+ caracteres), CRON_SECRET, APP_URL (o endereço do site)
+#   DEMO_DATA=true enquanto for uma demonstração com dados de exemplo
+[build]
+  command = "npm run db:migrate && npm run db:seed -- --if-empty && npm run build"
+
+[build.environment]
+  NODE_VERSION = "22"
