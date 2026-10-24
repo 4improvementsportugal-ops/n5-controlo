@@ -1,0 +1,31 @@
+# Ambiente local: Postgres 16 + app. `docker compose up --build`
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: n5
+      POSTGRES_PASSWORD: n5
+      POSTGRES_DB: n5
+    ports: ["5432:5432"]
+    volumes: [n5db:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U n5"]
+      interval: 5s
+      retries: 10
+  migrate:
+    build: .
+    command: ["node", "scripts/migrate.mjs"]
+    environment:
+      DATABASE_URL: postgres://n5:n5@db:5432/n5
+    depends_on:
+      db: { condition: service_healthy }
+  app:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://n5:n5@db:5432/n5
+    ports: ["3000:3000"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+volumes:
+  n5db:

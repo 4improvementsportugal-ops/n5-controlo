@@ -1,0 +1,321 @@
+import {
+  pgTable, pgEnum, text, integer, boolean, timestamp, jsonb, numeric, date, serial, uuid,
+  primaryKey, uniqueIndex, index,
+} from "drizzle-orm/pg-core";
+
+// ---------- Enums ----------
+export const softwareStatus = pgEnum("software_status", ["em_construcao", "beta", "lancado", "pausado"]);
+export const teamRole = pgEnum("team_role", ["socio", "direcao_operacoes", "colaborador"]);
+export const orgType = pgEnum("org_type", ["agencia", "eni", "particular"]);
+export const personOrigin = pgEnum("person_origin", ["pagante", "beta", "trial"]);
+export const subscriptionStatus = pgEnum("subscription_status", ["trialing", "active", "past_due", "canceled", "incomplete"]);
+export const feedbackType = pgEnum("feedback_type", ["sugestao", "bug", "funciona_bem", "funciona_mal"]);
+export const feedbackStatus = pgEnum("feedback_status", [
+  "recebido", "em_analise", "planeado", "em_desenvolvimento", "lancado", "recusado", "duplicado",
+]);
+export const severity = pgEnum("severity", ["critico", "alto", "medio", "baixo"]);
+export const roadmapPhase = pgEnum("roadmap_phase", [
+  "ideia", "descoberta", "design", "desenvolvimento", "testes", "staging", "producao",
+]);
+export const roadmapOrigin = pgEnum("roadmap_origin", ["comunidade", "equipa", "cliente", "incidente"]);
+export const alertSeverity = pgEnum("alert_severity", ["critico", "aviso", "informacao"]);
+export const alertStatus = pgEnum("alert_status", ["novo", "visto", "resolvido"]);
+export const alertModule = pgEnum("alert_module", ["comunidades", "pipeline", "campanhas", "receita", "sistema"]);
+
+// ---------- Equipa (quem usa o sistema de controlo) ----------
+export const users = pgTable("users", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  email: text("email").notNull().unique(),
+  name: text("name").notNull(),
+  passwordHash: text("password_hash").notNull(),
+  role: teamRole("role").notNull().default("colaborador"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Softwares a que um colaborador tem acesso (sócios e direção veem todos)
+export const userSoftwares = pgTable("user_softwares", {
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  softwareId: text("software_id").notNull().references(() => softwares.id, { onDelete: "cascade" }),
+}, (t) => [primaryKey({ columns: [t.userId, t.softwareId] })]);
+
+// ---------- Softwares ----------
+export const softwares = pgTable("softwares", {
+  id: text("id").primaryKey(), // sw_clara
+  name: text("name").notNull(),
+  code: text("code").notNull().unique(), // CLA, usado nos códigos do roadmap
+  status: softwareStatus("status").notNull().default("em_construcao"),
+  metaAdAccountId: text("meta_ad_account_id"),
+  metaPixelId: text("meta_pixel_id"),
+  githubRepos: text("github_repos").array().notNull().default([]),
+  slackPrefix: text("slack_prefix"),
+  activationDefinition: text("activation_definition"),
+  keyEvents: text("key_events").array().notNull().default([]),
+  cplLimitCents: integer("cpl_limit_cents"),
+  costPerAccountLimitCents: integer("cost_per_account_limit_cents"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ---------- Clientes dos softwares ----------
+export const organizations = pgTable("organizations", {
+  id: text("id").primaryKey(), // org_...
+  name: text("name").notNull(),
+  type: orgType("type").notNull().default("particular"),
+  nif: text("nif"),
+  stripeCustomerId: text("stripe_customer_id").unique(),
+  platformClientId: text("platform_client_id"), // ligação à plataforma 4Improvements
+  isExample: boolean("is_example").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const persons = pgTable("persons", {
+  id: text("id").primaryKey(), // per_...
+  organizationId: text("organization_id").references(() => organizations.id, { onDelete: "set null" }),
+  email: text("email"),
+  name: text("name"),
+  origin: personOrigin("origin").notNull().default("trial"),
+  slackUserId: text("slack_user_id"),
+  attribution: jsonb("attribution").$type<{
+    fbclid?: string; utm_source?: string; utm_medium?: string; utm_campaign?: string;
+    utm_content?: string; first_campaign?: string; last_campaign?: string;
+  }>(),
+  signedUpAt: timestamp("signed_up_at", { withTimezone: true }),
+  activatedAt: timestamp("activated_at", { withTimezone: true }),
+  softwareId: text("software_id").references(() => softwares.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index("persons_org_idx").on(t.organizationId)]);
+
+export const subscriptions = pgTable("subscriptions", {
+  id: text("id").primaryKey(), // id da subscrição no Stripe
+  organizationId: text("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  softwareId: text("software_id").notNull().references(() => softwares.id),
+  plan: text("plan").notNull(),
+  status: subscriptionStatus("status").notNull(),
+  mrrCents: integer("mrr_cents").notNull().default(0), // sem IVA, já com descontos
+  includedMinutes: integer("included_minutes").notNull().default(0),
+  includedLeads: integer("included_leads").notNull().default(0),
+  extraLimitCents: integer("extra_limit_cents"), // limite de consumo extra definido pelo cliente
+  trialEnd: timestamp("trial_end", { withTimezone: true }),
+  currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  canceledAt: timestamp("canceled_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index("subs_org_idx").on(t.organizationId), index("subs_sw_idx").on(t.softwareId)]);
+
+// MRR por conta e por mês, gravado todos os dias (o mês corrente é atualizado até fechar)
+export const mrrMonthly = pgTable("mrr_monthly", {
+  organizationId: text("organization_id").notNull(),
+  softwareId: text("software_id").notNull(),
+  month: text("month").notNull(), // YYYY-MM
+  mrrCents: integer("mrr_cents").notNull(),
+}, (t) => [primaryKey({ columns: [t.organizationId, t.softwareId, t.month] })]);
+
+export const invoices = pgTable("invoices", {
+  id: text("id").primaryKey(), // id da fatura no Stripe
+  organizationId: text("organization_id").references(() => organizations.id),
+  softwareId: text("software_id").references(() => softwares.id),
+  amountCents: integer("amount_cents").notNull(),
+  vatCents: integer("vat_cents").notNull().default(0),
+  status: text("status").notNull(), // paid, open, failed
+  certifiedNumber: text("certified_number"), // número da fatura certificada AT
+  issuedAt: timestamp("issued_at", { withTimezone: true }).notNull(),
+});
+
+// ---------- Núcleo: eventos e consumo ----------
+export const productEvents = pgTable("product_events", {
+  id: text("id").primaryKey(), // evt_..., enviado por quem gera o evento (idempotência)
+  softwareId: text("software_id").notNull().references(() => softwares.id),
+  name: text("name").notNull(),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+  personId: text("person_id"),
+  organizationId: text("organization_id"),
+  sessionId: text("session_id"),
+  feature: text("feature"),
+  properties: jsonb("properties").$type<Record<string, unknown>>(),
+  receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("events_sw_time_idx").on(t.softwareId, t.occurredAt),
+  index("events_person_idx").on(t.personId, t.occurredAt),
+]);
+
+export const usageRecords = pgTable("usage_records", {
+  id: text("id").primaryKey(), // use_..., idempotência
+  softwareId: text("software_id").notNull().references(() => softwares.id),
+  organizationId: text("organization_id").notNull(),
+  personId: text("person_id"),
+  unit: text("unit").notNull(), // ex.: call.forward.minute
+  quantity: numeric("quantity", { precision: 14, scale: 4 }).notNull(),
+  costUsd: numeric("cost_usd", { precision: 14, scale: 6 }).notNull(),
+  provider: text("provider").notNull(),
+  providerRef: text("provider_ref"),
+  billable: boolean("billable").notNull().default(true),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+  receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index("usage_org_time_idx").on(t.organizationId, t.occurredAt), index("usage_sw_time_idx").on(t.softwareId, t.occurredAt)]);
+
+// ---------- Módulo 1: Comunidades ----------
+export const feedback = pgTable("feedback", {
+  id: text("id").primaryKey(), // fb_...
+  softwareId: text("software_id").notNull().references(() => softwares.id),
+  type: feedbackType("type").notNull(),
+  title: text("title").notNull(),
+  text: text("text").notNull(),
+  authorName: text("author_name"),
+  authorSlackId: text("author_slack_id"),
+  authorPersonId: text("author_person_id"),
+  origin: personOrigin("origin"),
+  feature: text("feature"),
+  severity: severity("severity"),
+  votes: integer("votes").notNull().default(1),
+  status: feedbackStatus("status").notNull().default("recebido"),
+  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+  refusalReason: text("refusal_reason"),
+  roadmapItemId: integer("roadmap_item_id"),
+  duplicateOfId: text("duplicate_of_id"),
+  slackChannel: text("slack_channel"),
+  slackTs: text("slack_ts"),
+  firstResponseAt: timestamp("first_response_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index("feedback_sw_status_idx").on(t.softwareId, t.status)]);
+
+// ---------- Módulo 2: Pipeline ----------
+export const roadmapItems = pgTable("roadmap_items", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull().unique(), // CLA-12
+  softwareId: text("software_id").notNull().references(() => softwares.id),
+  title: text("title").notNull(),
+  description: text("description"),
+  origin: roadmapOrigin("origin").notNull().default("equipa"),
+  phase: roadmapPhase("phase").notNull().default("ideia"),
+  impact: integer("impact").notNull().default(1), // 1 a 3
+  reach: integer("reach").notNull().default(0), // contas estimadas
+  confidence: integer("confidence").notNull().default(50), // %
+  effort: integer("effort").notNull().default(1), // pontos
+  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+  agent: boolean("agent").notNull().default(false),
+  acceptanceCriteria: text("acceptance_criteria"),
+  productEvents: text("product_events").array().notNull().default([]),
+  sprint: text("sprint"),
+  version: text("version"),
+  phaseChangedAt: timestamp("phase_changed_at", { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const pullRequests = pgTable("pull_requests", {
+  id: text("id").primaryKey(), // repo#número
+  roadmapItemId: integer("roadmap_item_id"),
+  softwareId: text("software_id"),
+  repo: text("repo").notNull(),
+  number: integer("number").notNull(),
+  title: text("title").notNull(),
+  author: text("author").notNull(),
+  isAgent: boolean("is_agent").notNull().default(false),
+  state: text("state").notNull(), // open, closed, merged
+  url: text("url"),
+  firstCommitAt: timestamp("first_commit_at", { withTimezone: true }),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  mergedAt: timestamp("merged_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+});
+
+export const deployments = pgTable("deployments", {
+  id: text("id").primaryKey(),
+  softwareId: text("software_id"),
+  repo: text("repo").notNull(),
+  environment: text("environment").notNull(), // production, staging
+  status: text("status").notNull(), // success, failure, error, pending
+  sha: text("sha"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+});
+
+export const releases = pgTable("releases", {
+  id: serial("id").primaryKey(),
+  softwareId: text("software_id").notNull().references(() => softwares.id),
+  version: text("version").notNull(),
+  notes: text("notes").notNull().default(""),
+  publishedAt: timestamp("published_at", { withTimezone: true }),
+  slackPostedAt: timestamp("slack_posted_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [uniqueIndex("releases_sw_version").on(t.softwareId, t.version)]);
+
+// Custos mensais por fornecedor (AWS Cost Explorer ou faturas importadas)
+export const providerCosts = pgTable("provider_costs", {
+  softwareId: text("software_id").notNull(),
+  month: text("month").notNull(), // YYYY-MM
+  provider: text("provider").notNull(), // aws, twilio, meta_whatsapp, deepgram, bedrock, ses...
+  costCents: integer("cost_cents").notNull(),
+}, (t) => [primaryKey({ columns: [t.softwareId, t.month, t.provider] })]);
+
+// ---------- Módulo 3: Campanhas ----------
+export const campaignDaily = pgTable("campaign_daily", {
+  id: serial("id").primaryKey(),
+  softwareId: text("software_id").notNull().references(() => softwares.id),
+  accountId: text("account_id"),
+  campaignId: text("campaign_id").notNull(),
+  campaignName: text("campaign_name").notNull(),
+  adsetName: text("adset_name").notNull().default(""),
+  adName: text("ad_name").notNull().default(""),
+  date: date("date").notNull(),
+  spendCents: integer("spend_cents").notNull().default(0),
+  impressions: integer("impressions").notNull().default(0),
+  clicks: integer("clicks").notNull().default(0),
+  leads: integer("leads").notNull().default(0),
+  frequency: numeric("frequency", { precision: 6, scale: 2 }),
+}, (t) => [uniqueIndex("campaign_daily_uniq").on(t.campaignId, t.adsetName, t.adName, t.date)]);
+
+// ---------- Alertas ----------
+export const alerts = pgTable("alerts", {
+  id: serial("id").primaryKey(),
+  module: alertModule("module").notNull(),
+  softwareId: text("software_id"),
+  severity: alertSeverity("severity").notNull(),
+  title: text("title").notNull(),
+  detail: text("detail"),
+  dedupeKey: text("dedupe_key").notNull(),
+  count: integer("count").notNull().default(1),
+  status: alertStatus("status").notNull().default("novo"),
+  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+  note: text("note"),
+  mutedUntil: timestamp("muted_until", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+}, (t) => [index("alerts_status_idx").on(t.status, t.severity)]);
+
+// ---------- Acesso e auditoria ----------
+export const apiKeys = pgTable("api_keys", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  prefix: text("prefix").notNull().unique(), // primeiros caracteres visíveis
+  hash: text("hash").notNull(), // SHA-256 da chave completa
+  scopes: text("scopes").array().notNull(),
+  softwareId: text("software_id").references(() => softwares.id),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const auditLog = pgTable("audit_log", {
+  id: serial("id").primaryKey(),
+  actor: text("actor").notNull(), // user:<id> | key:<prefix> | webhook:<origem> | system
+  action: text("action").notNull(),
+  entity: text("entity").notNull(),
+  entityId: text("entity_id"),
+  before: jsonb("before"),
+  after: jsonb("after"),
+  at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Todos os webhooks recebidos ficam em bruto 30 dias, para reprocessar
+export const webhookInbox = pgTable("webhook_inbox", {
+  id: serial("id").primaryKey(),
+  source: text("source").notNull(),
+  externalId: text("external_id"),
+  receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+  body: text("body").notNull(),
+  processedAt: timestamp("processed_at", { withTimezone: true }),
+  error: text("error"),
+}, (t) => [uniqueIndex("webhook_inbox_ext").on(t.source, t.externalId)]);

@@ -1,0 +1,99 @@
+# Controlo N5
+
+Sistema de controlo dos softwares N5: comunidades, pipeline de desenvolvimento, campanhas e funil, utilização e receita. Lê os dados de todos os softwares através do núcleo N5 e mostra-os num só sítio, com alertas.
+
+A especificação completa está no documento "Especificação do Sistema de Controlo N5" (separadores *Módulos em detalhe* e *Contrato de dados do núcleo*). Este repositório é a primeira versão dessa especificação.
+
+## O que já faz
+
+| Módulo | Ecrãs | Entrada de dados |
+| --- | --- | --- |
+| Painel geral | Totais N5 (MRR, ARR, pagantes, gasto, CAC, margem, alertas) e uma linha por software | Todos os módulos |
+| Comunidades | Caixa de feedback com filtros, ficha do feedback (estado, dono, duplicados, item do roadmap, resposta no Slack), membros, changelog, registo manual | Slack (`/feedback`, reações), API `POST /api/v1/feedback` |
+| Pipeline | Roadmap por fase, backlog com pontuação, ficha do item com regras de fase, entregas (DORA), bugs, agentes de código, versões, custos por fornecedor | GitHub (PRs, revisões, deploys, releases), registo manual de custos |
+| Campanhas e funil | Totais, funil, campanhas com CPM, CTR, CPC, CPL, registos, pagantes e CAC | Meta Insights (a cada 6 h) ou CSV do Gestor de Anúncios |
+| Utilização e receita | MRR mês a mês (novo, expansão, contração, churn), contas com margem e saúde, utilização (ativos, tempo na app, funcionalidades), trials | Stripe (webhooks), eventos e consumo dos softwares |
+| Alertas | Centro de alertas com gravidade, dono, silenciar e resolver; críticos e avisos vão para o Slack interno | Regras a cada 15 min, webhooks, API `POST /api/v1/alerts` |
+| Definições | Softwares, utilizadores e funções, chaves de API, estado das ligações | |
+
+Acessos: sócios e direção de operações veem tudo; colaboradores veem Comunidades e Pipeline dos softwares que lhes forem atribuídos, sem o separador Custos.
+
+## Ainda não faz (próximas versões)
+
+- Ligação à plataforma 4Improvements (falta saber a tecnologia da plataforma).
+- Servidor MCP para agentes.
+- AWS Cost Explorer automático (os custos entram à mão em Pipeline › Custos).
+- Uptime e erros em produção (a ferramenta de monitorização envia alertas para `/api/v1/alerts` quando for escolhida).
+- Classificação automática do feedback por IA (título, tipo, duplicados).
+- Webhooks de saída do núcleo (Standard Webhooks). A assinatura já existe em `src/lib/signatures.ts`.
+
+## Correr localmente
+
+Precisas de Node 22 e Postgres 16 (ou Docker).
+
+```bash
+cp .env.example .env          # preenche SESSION_SECRET com 32+ caracteres
+npm install
+npm run db:migrate
+npm run db:seed               # dados de EXEMPLO; nunca em produção
+npm run dev                   # http://localhost:3000
+```
+
+Com o seed, entra com `socio@exemplo.n5` ou `colaborador@exemplo.n5`, palavra-passe `exemplo-n5-2026!`.
+
+Sem seed, cria o primeiro utilizador:
+
+```bash
+npm run user:create -- pedro@4improvements.pt "Pedro" socio 'uma-palavra-passe-longa'
+```
+
+Com Docker: `docker compose up --build`.
+
+## Testes
+
+```bash
+npm run typecheck
+npm test        # métricas (MRR, churn, NRR, ACV, CAC, payback, pontuação, tempo na app, saúde) e assinaturas de webhooks
+```
+
+## API do núcleo (para os softwares N5)
+
+Autenticação: `Authorization: Bearer <chave>`. As chaves criam-se em Definições › Chaves de API (ou `npm run apikey:create`), têm permissões, podem ficar presas a um software e expiram em 12 meses no máximo.
+
+| Rota | Permissão | Para quê |
+| --- | --- | --- |
+| `POST /api/v1/events` | `events:write` | Lote de até 100 eventos de produto |
+| `POST /api/v1/usage` | `usage:write` | Lote de até 500 registos de consumo |
+| `GET /api/v1/entitlements/{org}/{software}` | `entitlements:read` | Incluído, usado e restante; se a conta pode continuar |
+| `POST /api/v1/feedback`, `GET /api/v1/feedback` | `feedback:write`, `feedback:read` | Feedback a partir da app |
+| `POST /api/v1/alerts` | `alerts:write` | Alertas de sistemas externos |
+
+Os envios são idempotentes pelo `id`: repetir um evento ou um registo não duplica. Eventos fora da lista padrão têm de estar declarados nos eventos chave do software.
+
+Unidades de consumo que contam para o incluído no plano: `call.forward.minute` (minutos) e `lead.conversation` (uma por conversa com uma lead, com custo 0; os custos reais vão nas unidades de WhatsApp e de tokens).
+
+Exemplo:
+
+```bash
+curl -X POST https://controlo.n5.../api/v1/events \
+  -H "Authorization: Bearer $N5_KEY" -H "Content-Type: application/json" \
+  -d '[{"id":"evt_01","software":"sw_clara","name":"feature.used","feature":"voice.command",
+        "occurred_at":"2026-10-24T16:05:12Z","person":"per_1","organization":"org_1"}]'
+```
+
+## Ligações externas
+
+Ver `docs/integracoes.md` (Stripe, GitHub, Slack, Meta) e `docs/deploy-aws.md` (alojamento na organização AWS N5).
+
+## Estrutura
+
+```
+src/app/(app)/        ecrãs dos módulos (server components + server actions)
+src/app/api/v1/       API do núcleo
+src/app/api/webhooks/ Stripe, GitHub, Slack
+src/app/api/cron/     alertas (15 min), MRR (diário), Meta (6 h)
+src/lib/metrics.ts    cálculos puros, testados
+src/lib/core.ts       eventos, consumo, direitos, feedback, regras do roadmap
+src/lib/alerts.ts     regras de alerta
+src/db/schema.ts      modelo de dados (Drizzle, Postgres)
+```
