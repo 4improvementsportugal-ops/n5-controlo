@@ -27,6 +27,12 @@ Acessos: sócios e direção de operações veem tudo; colaboradores veem Comuni
 - Classificação automática do feedback por IA (título, tipo, duplicados).
 - Webhooks de saída do núcleo (Standard Webhooks). A assinatura já existe em `src/lib/signatures.ts`.
 
+## Ver online (demonstração)
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/4improvementsportugal-ops/n5-controlo)
+
+Cria a app e a base de dados em Frankfurt com dados de exemplo (`render.yaml`). Entra com `socio@exemplo.n5` / `exemplo-n5-2026!`. O plano grátis adormece sem uso e a base de dados grátis do Render expira ao fim de 30 dias: serve para ver, não para produção.
+
 ## Correr localmente
 
 Precisas de Node 22 e Postgres 16 (ou Docker).

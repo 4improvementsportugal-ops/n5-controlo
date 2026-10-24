@@ -18,6 +18,12 @@ const rnd = (() => { let s = 42; return () => (s = (s * 16807) % 2147483647) / 2
 const pick = <T,>(a: T[]) => a[Math.floor(rnd() * a.length)];
 
 async function main() {
+  // --if-empty: usado no arranque da demonstração; não apaga nada se já houver utilizadores
+  if (process.argv.includes("--if-empty")) {
+    if (process.env.DEMO_DATA !== "true") { console.log("DEMO_DATA não está ativo: sem dados de exemplo."); await sql.end(); return; }
+    const [{ n }] = await sql<{ n: number }[]>`select count(*)::int as n from users`;
+    if (n > 0) { console.log("A base de dados já tem utilizadores: seed ignorado."); await sql.end(); return; }
+  }
   await sql`truncate table audit_log, webhook_inbox, alerts, campaign_daily, provider_costs, releases, deployments, pull_requests,
     roadmap_items, feedback, usage_records, product_events, invoices, mrr_monthly, subscriptions, persons, organizations,
     api_keys, user_softwares, users, softwares restart identity cascade`;
