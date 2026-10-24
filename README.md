@@ -13,10 +13,11 @@ A especificação completa está no documento "Especificação do Sistema de Con
 | Pipeline | Roadmap por fase, backlog com pontuação, ficha do item com regras de fase, entregas (DORA), bugs, agentes de código, versões, custos por fornecedor | GitHub (PRs, revisões, deploys, releases), registo manual de custos |
 | Campanhas e funil | Totais, funil, campanhas com CPM, CTR, CPC, CPL, registos, pagantes e CAC | Meta Insights (a cada 6 h) ou CSV do Gestor de Anúncios |
 | Utilização e receita | MRR mês a mês (novo, expansão, contração, churn), contas com margem e saúde, utilização (ativos, tempo na app, funcionalidades), trials | Stripe (webhooks), eventos e consumo dos softwares |
+| Reativação | Há quanto tempo cada utilizador não usa (faixas por software e lista de pessoas), regras automáticas por dias sem usar, modelos de comunicação na app e por e-mail (lembrete, dica, novidade, oferta, feedback, fim de trial, reativação), envios e resultados (vistas, cliques, quem voltou) | Eventos dos softwares, Amazon SES, API `GET /api/v1/messages` |
 | Alertas | Centro de alertas com gravidade, dono, silenciar e resolver; críticos e avisos vão para o Slack interno | Regras a cada 15 min, webhooks, API `POST /api/v1/alerts` |
 | Definições | Softwares, utilizadores e funções, chaves de API, estado das ligações | |
 
-Acessos: sócios e direção de operações veem tudo; colaboradores veem Comunidades e Pipeline dos softwares que lhes forem atribuídos, sem o separador Custos.
+Acessos: sócios e direção de operações veem tudo (incluindo Reativação); colaboradores veem Comunidades e Pipeline dos softwares que lhes forem atribuídos, sem o separador Custos.
 
 ## Ainda não faz (próximas versões)
 
@@ -63,7 +64,7 @@ Com Docker: `docker compose up --build`.
 
 ```bash
 npm run typecheck
-npm test        # métricas (MRR, churn, NRR, ACV, CAC, payback, pontuação, tempo na app, saúde) e assinaturas de webhooks
+npm test        # métricas (MRR, churn, NRR, ACV, CAC, payback, pontuação, tempo na app, saúde) assinaturas de webhooks e regras de reativação
 ```
 
 ## API do núcleo (para os softwares N5)
@@ -77,6 +78,9 @@ Autenticação: `Authorization: Bearer <chave>`. As chaves criam-se em Definiç�
 | `GET /api/v1/entitlements/{org}/{software}` | `entitlements:read` | Incluído, usado e restante; se a conta pode continuar |
 | `POST /api/v1/feedback`, `GET /api/v1/feedback` | `feedback:write`, `feedback:read` | Feedback a partir da app |
 | `POST /api/v1/alerts` | `alerts:write` | Alertas de sistemas externos |
+| `GET /api/v1/messages?person=` | `messages:read` | Mensagens na app por mostrar ao utilizador |
+| `POST /api/v1/messages/{id}/events` | `messages:write` | Mensagem vista, clicada ou dispensada |
+| `POST /api/v1/persons/{id}/preferences` | `messages:write` | Cancelar e-mails ou mensagens na app |
 
 Os envios são idempotentes pelo `id`: repetir um evento ou um registo não duplica. Eventos fora da lista padrão têm de estar declarados nos eventos chave do software.
 
@@ -93,7 +97,7 @@ curl -X POST https://controlo.n5.../api/v1/events \
 
 ## Ligações externas
 
-Ver `docs/integracoes.md` (Stripe, GitHub, Slack, Meta) e `docs/deploy-aws.md` (alojamento na organização AWS N5).
+Ver `docs/integracoes.md` (Stripe, GitHub, Slack, Meta, comunicações na app e e-mail) e `docs/deploy-aws.md` (alojamento na organização AWS N5).
 
 ## Estrutura
 
@@ -101,9 +105,10 @@ Ver `docs/integracoes.md` (Stripe, GitHub, Slack, Meta) e `docs/deploy-aws.md` (
 src/app/(app)/        ecrãs dos módulos (server components + server actions)
 src/app/api/v1/       API do núcleo
 src/app/api/webhooks/ Stripe, GitHub, Slack
-src/app/api/cron/     alertas (15 min), MRR (diário), Meta (6 h)
+src/app/api/cron/     alertas (15 min), MRR (diário), Meta (6 h), reativação (1 h)
 src/lib/metrics.ts    cálculos puros, testados
 src/lib/core.ts       eventos, consumo, direitos, feedback, regras do roadmap
 src/lib/alerts.ts     regras de alerta
+src/lib/engagement*.ts inatividade, regras e envio de comunicações
 src/db/schema.ts      modelo de dados (Drizzle, Postgres)
 ```
