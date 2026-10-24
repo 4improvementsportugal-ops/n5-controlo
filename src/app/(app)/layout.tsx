@@ -17,6 +17,7 @@ const NAV: { href: string; label: string; module: Module }[] = [
   { href: "/pipeline", label: "Pipeline", module: "pipeline" },
   { href: "/campanhas", label: "Campanhas e funil", module: "campanhas" },
   { href: "/receita", label: "Utilização e receita", module: "receita" },
+  { href: "/reativacao", label: "Reativação", module: "reativacao" },
   { href: "/alertas", label: "Alertas", module: "alertas" },
   { href: "/definicoes", label: "Definições", module: "definicoes" },
 ];

@@ -1,5 +1,4 @@
 import "server-only";
-import { randomBytes } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
@@ -8,11 +7,10 @@ import { raiseAlert } from "./alerts";
 import { postSlackMessage } from "./slack";
 import { audit } from "./audit";
 import { LABELS } from "./format";
+import { newId } from "./ids";
+import { recordActivity } from "./engagement";
 
-export function newId(prefix: string): string {
-  // Prefixo + tempo + aleatório, ordenável por data de criação
-  return `${prefix}_${Date.now().toString(36)}${randomBytes(6).toString("hex")}`;
-}
+export { newId } from "./ids";
 
 // ---------------- Eventos de produto ----------------
 export const eventSchema = z.object({
@@ -37,6 +35,7 @@ export interface BatchResult { accepted: number; duplicates: number; rejected: {
 
 export async function ingestEvents(items: unknown[], restrictSoftware: string | null): Promise<BatchResult> {
   const result: BatchResult = { accepted: 0, duplicates: 0, rejected: [] };
+  const lastByPersonOut = new Map<string, Date>();
   const sws = await db.select().from(schema.softwares);
   const valid: EventInput[] = [];
   for (const raw of items) {
@@ -61,6 +60,11 @@ export async function ingestEvents(items: unknown[], restrictSoftware: string | 
     result.duplicates = valid.length - inserted.length;
     // Efeitos laterais dos eventos padrão
     const insertedIds = new Set(inserted.map((r) => r.id));
+    // Última utilização por pessoa (módulo Reativação)
+    for (const e of valid.filter((v) => insertedIds.has(v.id) && v.person)) {
+      const at = new Date(e.occurred_at);
+      if (!lastByPersonOut.has(e.person!) || lastByPersonOut.get(e.person!)! < at) lastByPersonOut.set(e.person!, at);
+    }
     for (const e of valid.filter((v) => insertedIds.has(v.id))) {
       if (e.name === "account.activated" && e.person) {
         await db.update(schema.persons).set({ activatedAt: new Date(e.occurred_at) })
@@ -85,6 +89,7 @@ export async function ingestEvents(items: unknown[], restrictSoftware: string | 
       }
     }
   }
+  for (const [person, at] of lastByPersonOut) await recordActivity(person, at);
   return result;
 }
 

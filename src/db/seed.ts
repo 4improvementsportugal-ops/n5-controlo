@@ -24,7 +24,7 @@ async function main() {
     const [{ n }] = await sql<{ n: number }[]>`select count(*)::int as n from users`;
     if (n > 0) { console.log("A base de dados já tem utilizadores: seed ignorado."); await sql.end(); return; }
   }
-  await sql`truncate table audit_log, webhook_inbox, alerts, campaign_daily, provider_costs, releases, deployments, pull_requests,
+  await sql`truncate table outbound_messages, engagement_rules, message_templates, audit_log, webhook_inbox, alerts, campaign_daily, provider_costs, releases, deployments, pull_requests,
     roadmap_items, feedback, usage_records, product_events, invoices, mrr_monthly, subscriptions, persons, organizations,
     api_keys, user_softwares, users, softwares restart identity cascade`;
 
@@ -72,14 +72,16 @@ async function main() {
     for (let p = 0; p < people; p++) {
       const pid = id("per");
       await db.insert(schema.persons).values({
-        id: pid, organizationId: orgId, softwareId: sw, name: `${pick(firstNames)} (exemplo)`, origin: status === "trialing" ? "trial" : i % 5 === 0 ? "beta" : "pagante",
+        id: pid, organizationId: orgId, softwareId: sw, email: `${pid}@exemplo.n5`, name: `${pick(firstNames)} (exemplo)`, origin: status === "trialing" ? "trial" : i % 5 === 0 ? "beta" : "pagante",
         signedUpAt: started, activatedAt: i % 6 === 0 ? null : new Date(started.getTime() + 2 * day),
         attribution: i % 8 === 0 ? {} : { utm_source: "facebook", utm_campaign: pick(isImo ? campaignsImo : campaignsClara), last_campaign: pick(isImo ? campaignsImo : campaignsClara) },
       });
       // Eventos de uso nos últimos 30 dias
       if (status !== "canceled") {
         const evs = [];
-        for (let d = 0; d < 30; d++) {
+        // Algumas pessoas deixaram de usar há algum tempo (para o módulo Reativação)
+        const quietDays = (i + p) % 4 === 1 ? 3 + ((i * 7 + p * 5) % 38) : 0;
+        for (let d = quietDays; d < 30; d++) {
           if (rnd() < (i % 11 === 0 ? 0.1 : 0.6)) {
             const at = new Date(now - d * day - Math.floor(rnd() * 8) * 36e5);
             for (let h = 0; h < 3 + Math.floor(rnd() * 15); h++) evs.push({ id: id("evt"), softwareId: sw, name: "session.heartbeat", occurredAt: new Date(at.getTime() + h * 60000), personId: pid, organizationId: orgId });
@@ -123,6 +125,46 @@ async function main() {
       }
     }
   }
+
+  // Última utilização a partir dos eventos; quem não tem eventos fica com a data de registo
+  await sql`update persons set last_seen_at = (select max(occurred_at) from product_events e where e.person_id = persons.id)`;
+
+  // ---- Reativação: modelos, regras e envios de exemplo
+  const [tInapp, tEmail7, tFeedback, tOffer] = await db.insert(schema.messageTemplates).values([
+    { name: "Lembrete na app (3 dias)", type: "lembrete", channel: "inapp", subject: "Tem leads à sua espera",
+      body: "Olá {{nome}}, o agente respondeu a novas leads enquanto esteve fora. Veja quem está pronto para visita.", ctaLabel: "Ver leads", ctaUrl: "https://exemplo.n5/leads" },
+    { name: "E-mail de reativação (7 dias)", type: "reativacao", channel: "email", subject: "{{nome}}, as suas leads continuam a chegar",
+      body: "Olá {{nome}},\n\nHá {{dias}} dias que não entra no {{software}}. Nesse tempo, o agente continuou a responder às suas leads.\n\nEntre para ver quem está mais perto de fechar.", ctaLabel: "Abrir o {{software}}", ctaUrl: "https://exemplo.n5/entrar" },
+    { name: "Pedido de feedback (14 dias)", type: "feedback", channel: "email", subject: "O que podemos melhorar no {{software}}?",
+      body: "Olá {{nome}},\n\nReparámos que não usa o {{software}} há {{dias}} dias. Conte-nos em dois minutos o que falhou: lemos todas as respostas.", ctaLabel: "Responder", ctaUrl: "https://exemplo.n5/feedback" },
+    { name: "Oferta de regresso (30 dias)", type: "oferta", channel: "email", subject: "Um mês grátis para voltar ao {{software}}",
+      body: "Olá {{nome}},\n\nSe quiser voltar a experimentar, o próximo mês é por nossa conta.", ctaLabel: "Voltar", ctaUrl: "https://exemplo.n5/voltar" },
+  ]).returning();
+  const rules = await db.insert(schema.engagementRules).values([
+    { name: "3 dias sem usar: lembrete na app", inactiveDays: 3, audience: "todos", templateId: tInapp.id },
+    { name: "7 dias sem usar: e-mail", inactiveDays: 7, audience: "todos", templateId: tEmail7.id },
+    { name: "14 dias sem usar: pedir feedback", inactiveDays: 14, audience: "pagante", templateId: tFeedback.id },
+    { name: "30 dias sem usar: oferta", inactiveDays: 30, audience: "pagante", templateId: tOffer.id, active: false },
+  ]).returning();
+  const persons = await db.select().from(schema.persons);
+  for (const p of persons.filter((x) => x.lastSeenAt)) {
+    const days = Math.floor((now - p.lastSeenAt!.getTime()) / day);
+    for (const [r, t] of [[rules[0], tInapp], [rules[1], tEmail7], [rules[2], tFeedback]] as const) {
+      if (days < r.inactiveDays + 1) continue;
+      const sentAt = new Date(p.lastSeenAt!.getTime() + (r.inactiveDays + 0.5) * day);
+      const roll = rnd();
+      await db.insert(schema.outboundMessages).values({
+        id: id("msg"), personId: p.id, softwareId: p.softwareId!, ruleId: r.id, templateId: t.id, channel: t.channel, type: t.type,
+        subject: t.subject.replace("{{nome}}", (p.name ?? "").split(" ")[0]).replace("{{software}}", "N5"), body: t.body.replace("{{nome}}", (p.name ?? "").split(" ")[0]).replace("{{dias}}", String(r.inactiveDays)).replace(/\{\{software\}\}/g, "N5"),
+        ctaLabel: t.ctaLabel, ctaUrl: t.ctaUrl, daysInactiveAtSend: r.inactiveDays, createdAt: sentAt, sentAt,
+        status: t.channel === "inapp" ? (roll < 0.5 ? "vista" : "entregue") : roll < 0.25 ? "clicada" : "enviada",
+        seenAt: t.channel === "inapp" && roll < 0.5 ? sentAt : null, clickedAt: roll < 0.25 ? sentAt : null,
+      });
+    }
+  }
+  // Algumas comunicações recentes resultaram em regresso (a pessoa voltou nos 7 dias seguintes)
+  await sql`update outbound_messages m set returned_at = m.sent_at + interval '2 days', status = 'clicada'
+    where m.id in (select id from outbound_messages where channel = 'inapp' order by id limit 4)`;
 
   // ---- Feedback
   const fb: { sw: string; type: "sugestao" | "bug" | "funciona_bem" | "funciona_mal"; title: string; feature: string; severity?: "critico" | "alto" | "medio"; status?: "recebido" | "em_analise" | "planeado" | "lancado" | "recusado"; daysAgo: number; votes: number }[] = [

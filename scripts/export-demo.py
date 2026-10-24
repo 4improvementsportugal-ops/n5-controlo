@@ -25,6 +25,7 @@ PAGES = [
     "pipeline", "pipeline?vista=backlog", "pipeline?vista=entregas", "pipeline?vista=agentes", "pipeline?vista=versoes",
     "pipeline?vista=custos", "pipeline?vista=novo",
     "campanhas", "receita", "receita?vista=contas", "receita?vista=utilizacao", "receita?vista=trials",
+    "reativacao", "reativacao?vista=regras", "reativacao?vista=modelos", "reativacao?vista=envios",
     "alertas", "alertas?estado=resolvidos", "alertas?estado=todos",
     "definicoes", "definicoes?vista=utilizadores", "definicoes?vista=chaves", "definicoes?vista=ligacoes",
 ]

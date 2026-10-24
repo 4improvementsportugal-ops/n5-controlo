@@ -53,3 +53,19 @@ Todas as ligações verificam a assinatura de cada pedido e guardam o pedido em 
 - `/api/cron/meta-sync` lê os últimos 28 dias ao nível do anúncio, por dia, a cada 6 horas. Também existe o botão "Sincronizar Meta agora".
 - Alternativa sem token: importar o CSV exportado do Gestor de Anúncios em Campanhas e funil.
 - Atribuição: as UTMs chegam com o evento `account.signed_up` (propriedades `utm_campaign`, `fbclid`, …). O nome da campanha tem de ser igual a `utm_campaign`.
+
+## Comunicações na app e por e-mail (módulo Reativação)
+
+O sistema calcula há quantos dias cada pessoa não usa o software a partir dos eventos recebidos em `POST /api/v1/events`: cada evento atualiza a última utilização. As regras correm de hora a hora (`/api/cron/engagement`).
+
+**Na app.** Cada software mostra as mensagens pendentes ao utilizador e informa o que aconteceu:
+
+| Rota | Permissão | Para quê |
+| --- | --- | --- |
+| `GET /api/v1/messages?person={id}` | `messages:read` | Mensagens na app por mostrar (ficam marcadas como entregues) |
+| `POST /api/v1/messages/{id}/events` | `messages:write` | `{"type":"seen"}`, `"clicked"` ou `"dismissed"` |
+| `POST /api/v1/persons/{id}/preferences` | `messages:write` | `{"email_opt_out":true}` e/ou `{"inapp_opt_out":true}` |
+
+**E-mail.** Amazon SES (ver `docs/deploy-aws.md`). Só sai entre as 09:00 e as 20:00 de Lisboa, de segunda a sábado; fora disso fica pendente para a hora seguinte. O botão passa por `/api/r/{id}` para registar o clique; o link de cancelamento abre uma confirmação.
+
+**Limites.** No máximo 1 e-mail a cada 3 dias e 3 comunicações por semana por pessoa. Cada regra dispara uma vez por período de inatividade. Quem cancelou não recebe nada desse canal, nem em envios manuais.

@@ -75,6 +75,11 @@ export const persons = pgTable("persons", {
   name: text("name"),
   origin: personOrigin("origin").notNull().default("trial"),
   slackUserId: text("slack_user_id"),
+  // Módulo Reativação: última utilização e preferências de comunicação
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+  emailOptOut: boolean("email_opt_out").notNull().default(false),
+  inappOptOut: boolean("inapp_opt_out").notNull().default(false),
+  unsubscribeToken: text("unsubscribe_token").unique(),
   attribution: jsonb("attribution").$type<{
     fbclid?: string; utm_source?: string; utm_medium?: string; utm_campaign?: string;
     utm_content?: string; first_campaign?: string; last_campaign?: string;
@@ -83,7 +88,7 @@ export const persons = pgTable("persons", {
   activatedAt: timestamp("activated_at", { withTimezone: true }),
   softwareId: text("software_id").references(() => softwares.id),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [index("persons_org_idx").on(t.organizationId)]);
+}, (t) => [index("persons_org_idx").on(t.organizationId), index("persons_last_seen_idx").on(t.lastSeenAt)]);
 
 export const subscriptions = pgTable("subscriptions", {
   id: text("id").primaryKey(), // id da subscrição no Stripe
@@ -319,3 +324,59 @@ export const webhookInbox = pgTable("webhook_inbox", {
   processedAt: timestamp("processed_at", { withTimezone: true }),
   error: text("error"),
 }, (t) => [uniqueIndex("webhook_inbox_ext").on(t.source, t.externalId)]);
+
+// ---------- Módulo 5: Reativação e comunicações ----------
+export const messageChannel = pgEnum("message_channel", ["inapp", "email"]);
+export const messageType = pgEnum("message_type", ["lembrete", "dica", "novidade", "oferta", "feedback", "fim_trial", "reativacao"]);
+export const messageStatus = pgEnum("message_status", [
+  "pendente", "enviada", "entregue", "vista", "clicada", "dispensada", "falhou", "cancelada", "bloqueada",
+]);
+export const ruleAudience = pgEnum("rule_audience", ["todos", "pagante", "trial", "beta"]);
+
+export const messageTemplates = pgTable("message_templates", {
+  id: serial("id").primaryKey(),
+  softwareId: text("software_id").references(() => softwares.id, { onDelete: "cascade" }), // null = todos
+  name: text("name").notNull(),
+  type: messageType("type").notNull(),
+  channel: messageChannel("channel").notNull(),
+  subject: text("subject").notNull(), // e-mail: assunto; in-app: título
+  body: text("body").notNull(), // variáveis: {{nome}}, {{dias}}, {{software}}, {{link}}
+  ctaLabel: text("cta_label"),
+  ctaUrl: text("cta_url"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const engagementRules = pgTable("engagement_rules", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  softwareId: text("software_id").references(() => softwares.id, { onDelete: "cascade" }), // null = todos
+  inactiveDays: integer("inactive_days").notNull(),
+  audience: ruleAudience("audience").notNull().default("todos"),
+  templateId: integer("template_id").notNull().references(() => messageTemplates.id),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const outboundMessages = pgTable("outbound_messages", {
+  id: text("id").primaryKey(), // msg_...
+  personId: text("person_id").notNull().references(() => persons.id, { onDelete: "cascade" }),
+  softwareId: text("software_id").notNull().references(() => softwares.id),
+  ruleId: integer("rule_id").references(() => engagementRules.id, { onDelete: "set null" }),
+  templateId: integer("template_id").references(() => messageTemplates.id, { onDelete: "set null" }),
+  channel: messageChannel("channel").notNull(),
+  type: messageType("type").notNull(),
+  subject: text("subject").notNull(),
+  body: text("body").notNull(),
+  ctaLabel: text("cta_label"),
+  ctaUrl: text("cta_url"),
+  status: messageStatus("status").notNull().default("pendente"),
+  daysInactiveAtSend: integer("days_inactive_at_send"),
+  error: text("error"),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+  seenAt: timestamp("seen_at", { withTimezone: true }),
+  clickedAt: timestamp("clicked_at", { withTimezone: true }),
+  returnedAt: timestamp("returned_at", { withTimezone: true }), // voltou a usar até 7 dias depois do envio
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index("outbound_person_idx").on(t.personId, t.createdAt), index("outbound_rule_idx").on(t.ruleId)]);
