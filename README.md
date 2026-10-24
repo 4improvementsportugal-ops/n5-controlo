@@ -32,7 +32,7 @@ Acessos: sócios e direção de operações veem tudo (incluindo Reativação); 
 
 Demonstração estática dos dashboards no GitHub Pages: https://4improvementsportugal-ops.github.io/n5-controlo/ (dados de exemplo; filtros e formulários não funcionam). Para a atualizar: `python3 scripts/export-demo.py` (instruções no próprio script).
 
-App completa, com login e base de dados:
+App completa, com login e base de dados, na Netlify: ver `docs/deploy-netlify.md`. Alternativa no Render:
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/4improvementsportugal-ops/n5-controlo)
 
