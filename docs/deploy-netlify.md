@@ -6,7 +6,8 @@ A Netlify corre a app Next.js com o adaptador oficial (instalado automaticamente
 
 Recomendado: um projeto Supabase em Frankfurt (`eu-central-1`) ou Irlanda (`eu-west-1`).
 
-- Em `DATABASE_URL` usa a ligação **via pooler** (Supavisor, porta 6543). A app deteta o pooler e desliga os *prepared statements*.
+- Em `DATABASE_URL` usa a ligação **Session pooler** do Supabase (botão Connect, porta 5432). Funciona em IPv4, que a Netlify precisa, e aceita as migrações. A app deteta o pooler e abre poucas ligações.
+- Projeto criado: **N5 Controlo** (`peyjcrrfgtsgjickznjx`), Frankfurt.
 - As migrações correm em cada build (`npm run db:migrate`), por isso a base de dados tem de aceitar ligações da Netlify.
 - Alternativa: Netlify Database (só em planos por créditos). A app lê `NETLIFY_DB_URL` se `DATABASE_URL` não existir.
 
@@ -17,7 +18,7 @@ Recomendado: um projeto Supabase em Frankfurt (`eu-central-1`) ou Irlanda (`eu-w
 
 | Variável | Valor |
 | --- | --- |
-| `DATABASE_URL` | Ligação Postgres via pooler |
+| `DATABASE_URL` | Ligação Session pooler do Supabase, com a palavra-passe da base de dados |
 | `SESSION_SECRET` | String aleatória com 32+ caracteres |
 | `CRON_SECRET` | String aleatória longa |
 | `APP_URL` | Endereço do site, por exemplo `https://n5-controlo.netlify.app` |
