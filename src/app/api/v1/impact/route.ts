@@ -27,6 +27,8 @@ export async function GET(req: Request) {
         hours_saved: a ? Math.round((a.minutesSaved / 60) * 10) / 10 : 0,
         hours_saved_per_month: a ? Math.round(hoursPerMonth(a.minutesSaved, months) * 10) / 10 : 0,
         time_value_eur: a ? a.timeValueCents / 100 : 0,
+        hour_value_eur: a ? a.hourValueCents / 100 : null,
+        hour_value_source: a?.hourValueSource ?? null, // "onboarding" ou "reserva"
         leads: a?.leadsTotal ?? 0,
         after_hours_leads_answered_by_ai: a?.afterHoursByAi ?? 0,
         visits_scheduled_by_ai: a?.visitsByAi ?? 0,

@@ -12,11 +12,12 @@ export async function saveSettings(_prev: Result, form: FormData): Promise<Resul
   const user = await requireUser("impacto");
   const softwareId = String(form.get("softwareId") ?? "");
   if (!allowedSoftware(user, softwareId)) return { error: "Sem acesso a este software." };
-  const hour = num(form.get("hourValue")), fast = num(form.get("fastResponseMinutes")), sample = num(form.get("minSample"));
+  const hour = num(form.get("hourValue")), weekly = num(form.get("defaultWeeklyHours")), fast = num(form.get("fastResponseMinutes")), sample = num(form.get("minSample"));
   if (!(hour > 0 && hour < 1000)) return { error: "Valor da hora entre 0 e 1 000 €." };
+  if (!(weekly >= 1 && weekly <= 100)) return { error: "Horas por semana entre 1 e 100." };
   if (!(fast >= 1 && fast <= 120)) return { error: "Resposta rápida entre 1 e 120 minutos." };
   if (!(sample >= 10 && sample <= 1000)) return { error: "Amostra mínima entre 10 e 1 000 leads." };
-  const values = { hourValueCents: Math.round(hour * 100), fastResponseMinutes: Math.round(fast), minSample: Math.round(sample), updatedAt: new Date() };
+  const values = { hourValueCents: Math.round(hour * 100), defaultWeeklyHours: Math.round(weekly), fastResponseMinutes: Math.round(fast), minSample: Math.round(sample), updatedAt: new Date() };
   const [before] = await db.select().from(schema.impactSettings).where(eq(schema.impactSettings.softwareId, softwareId));
   await db.insert(schema.impactSettings).values({ softwareId, ...values }).onConflictDoUpdate({ target: schema.impactSettings.softwareId, set: values });
   await audit(`user:${user.sub}`, "impact.settings_updated", "impact_settings", softwareId, before ?? null, values);

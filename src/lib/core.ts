@@ -30,7 +30,7 @@ const STANDARD_EVENTS = new Set([
   "session.started", "session.heartbeat", "feature.used", "account.signed_up", "account.activated",
   "member.invited", "member.joined", "integration.connected", "integration.failed",
   // Módulo Impacto
-  "task.completed", "lead.received", "lead.first_response", "visit.scheduled", "deal.closed",
+  "task.completed", "lead.received", "lead.first_response", "visit.scheduled", "deal.closed", "account.profile_updated",
 ]);
 
 export interface BatchResult { accepted: number; duplicates: number; rejected: { id?: string; error: string }[] }
@@ -83,6 +83,20 @@ export async function ingestEvents(items: unknown[], restrictSoftware: string | 
             first_campaign: props.utm_campaign, last_campaign: props.utm_campaign,
           },
         }).onConflictDoNothing();
+      }
+      if (e.name === "account.profile_updated" && e.organization) {
+        // Perfil do onboarding (módulo Impacto): faturação média e horas de trabalho, para o valor da hora da conta
+        const pr = (e.properties ?? {}) as Record<string, unknown>;
+        const n = (v: unknown) => (typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN);
+        const monthly = isFinite(n(pr.avg_monthly_revenue_eur)) ? n(pr.avg_monthly_revenue_eur) : isFinite(n(pr.annual_revenue_eur)) ? n(pr.annual_revenue_eur) / 12 : NaN;
+        const hours = n(pr.weekly_hours);
+        const values = {
+          avgMonthlyRevenueCents: isFinite(monthly) && monthly > 0 ? Math.round(monthly * 100) : null,
+          weeklyHours: isFinite(hours) && hours > 0 && hours <= 100 ? hours.toFixed(1) : null,
+          updatedAt: new Date(e.occurred_at),
+        };
+        await db.insert(schema.accountProfiles).values({ organizationId: e.organization, softwareId: e.software, ...values })
+          .onConflictDoUpdate({ target: [schema.accountProfiles.organizationId, schema.accountProfiles.softwareId], set: values });
       }
       if (e.name === "integration.failed") {
         await raiseAlert({ module: "sistema", softwareId: e.software, severity: "aviso",

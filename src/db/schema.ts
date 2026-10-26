@@ -400,8 +400,19 @@ export const impactTasks = pgTable("impact_tasks", {
 // Pressupostos de valor por software
 export const impactSettings = pgTable("impact_settings", {
   softwareId: text("software_id").primaryKey().references(() => softwares.id, { onDelete: "cascade" }),
-  hourValueCents: integer("hour_value_cents").notNull().default(2000), // valor de uma hora do utilizador
+  hourValueCents: integer("hour_value_cents").notNull().default(2000), // valor da hora de reserva, para contas sem dados do onboarding
+  defaultWeeklyHours: integer("default_weekly_hours").notNull().default(40), // horas por semana quando a conta não as indicou
   fastResponseMinutes: integer("fast_response_minutes").notNull().default(5), // limiar de resposta rápida
   minSample: integer("min_sample").notNull().default(30), // leads mínimas por grupo para comparar conversões
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// Perfil da conta recolhido pelo software no onboarding (evento account.profile_updated).
+// Dá o valor da hora de cada conta: faturação média mensal ÷ horas de trabalho por mês.
+export const accountProfiles = pgTable("account_profiles", {
+  organizationId: text("organization_id").notNull(),
+  softwareId: text("software_id").notNull().references(() => softwares.id, { onDelete: "cascade" }),
+  avgMonthlyRevenueCents: integer("avg_monthly_revenue_cents"),
+  weeklyHours: numeric("weekly_hours", { precision: 5, scale: 1 }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [primaryKey({ columns: [t.organizationId, t.softwareId] })]);

@@ -69,3 +69,21 @@ describe("retorno", () => {
     expect(returnMultiple(100, 0)).toBeNull();
   });
 });
+
+import { hourValueFromProfile, measuredManualMinutes } from "../src/lib/metrics";
+
+describe("pressupostos automáticos", () => {
+  it("calcula o valor da hora a partir da faturação e das horas do onboarding", () => {
+    // 4 000 € por mês, 40 h por semana = 173,3 h por mês = 23,08 €/h
+    expect(hourValueFromProfile(400000, 40, 40)).toBe(2308);
+    // sem horas indicadas usa as horas por omissão
+    expect(hourValueFromProfile(400000, null, 50)).toBe(1846);
+    expect(hourValueFromProfile(null, 40, 40)).toBeNull();
+  });
+  it("mede o tempo à mão com a mediana, só com amostra suficiente", () => {
+    expect(measuredManualMinutes([240, 300, 360], 5)).toBeNull();
+    expect(measuredManualMinutes([240, 300, 360, 420, 600], 5)).toBe(6);
+    // ignora valores impossíveis
+    expect(measuredManualMinutes([0, -5, 240, 300, 360, 420, 600, 99999], 5)).toBe(6);
+  });
+});

@@ -81,6 +81,12 @@ O módulo Impacto só mostra o que os softwares registam. Cada software envia, e
 | `lead.first_response` | Primeira resposta à lead | `lead`, `seconds` (desde que chegou), `by` (`ai` ou `human`) |
 | `visit.scheduled` | Visita marcada | `lead`, `by` |
 | `deal.closed` | Negócio fechado com essa lead | `lead`, `commission_eur` (comissão do utilizador, sem IVA) |
+| `account.profile_updated` | No onboarding e sempre que o utilizador atualiza o perfil | `avg_monthly_revenue_eur` (faturação média mensal) ou `annual_revenue_eur`, `weekly_hours` (horas de trabalho por semana) |
+
+Pressupostos automáticos:
+
+- **Valor da hora de cada conta** = faturação média mensal ÷ (horas por semana × 52 ÷ 12), a partir de `account.profile_updated`. Contas sem perfil usam o valor de reserva do software.
+- **Tempo à mão de cada tarefa** = mediana de `human_seconds` das execuções com `by: "human"`, a partir da amostra mínima (30 por omissão). Por isso, quando a pessoa faz a tarefa à mão no software, envia `task.completed` com `by: "human"` e o tempo que gastou. Até haver amostra usa-se a estimativa do catálogo.
 
 Regras:
 

@@ -35,17 +35,24 @@ export default async function Impacto({ searchParams }: { searchParams: Promise<
       <PageHeader title="Impacto" lead="A prova de que cada software compensa para quem o usa: tempo poupado em cada tarefa, leads atendidas a tempo que de outra forma se perdiam e o negócio que daí resulta." />
       <Tabs items={tabs} active={vista} />
       {!ids.length ? <Empty title="Sem softwares neste filtro" /> : null}
-      {vista === "resumo" ? ids.map((id) => <Resumo key={id} name={swName(id)} b={data.bySoftware.get(id)!} months={data.months} hourValueCents={settings.get(id)!.hourValueCents} fastMin={settings.get(id)!.fastResponseMinutes} />) : null}
+      {vista === "resumo" ? ids.map((id) => <Resumo key={id} name={swName(id)} b={data.bySoftware.get(id)!} months={data.months} fastMin={settings.get(id)!.fastResponseMinutes} />) : null}
       {vista === "resumo" && ids.length ? <ComoLer /> : null}
       {vista === "tarefas" ? ids.map((id) => <Tarefas key={id} name={swName(id)} b={data.bySoftware.get(id)!} />) : null}
       {vista === "leads" ? ids.map((id) => <Leads key={id} name={swName(id)} b={data.bySoftware.get(id)!} fastMin={settings.get(id)!.fastResponseMinutes} minSample={settings.get(id)!.minSample} />) : null}
       {vista === "contas" ? <Contas accounts={data.accounts} swName={swName} months={data.months} /> : null}
-      {vista === "pressupostos" ? <Pressupostos ids={ids} swName={swName} settings={settings} /> : null}
+      {vista === "pressupostos" ? <Pressupostos ids={ids} swName={swName} settings={settings} data={data} /> : null}
     </>
   );
 }
 
-function Resumo({ name, b, months, hourValueCents, fastMin }: { name: string; b: ImpactBlock; months: number; hourValueCents: number; fastMin: number }) {
+function hourNote(b: ImpactBlock) {
+  const h = b.hourValue;
+  if (!h.accounts) return "sem contas com dados";
+  if (!h.fromProfile) return `${fmtEur0(h.fallbackCents)}/h de reserva: nenhuma conta respondeu ao onboarding`;
+  return `valor da hora de cada conta, do onboarding (${h.fromProfile} de ${h.accounts} contas, mediana ${fmtEur0(h.medianCents)}/h)`;
+}
+
+function Resumo({ name, b, months, fastMin }: { name: string; b: ImpactBlock; months: number; fastMin: number }) {
   const l = b.leads;
   if (!b.tasks.length && !l.total) {
     return <section className="mb-6"><h2 className="h2">{name}</h2><Empty title="Ainda sem dados de impacto">Aparecem quando o software enviar os eventos task.completed, lead.received e lead.first_response.</Empty></section>;
@@ -56,7 +63,7 @@ function Resumo({ name, b, months, hourValueCents, fastMin }: { name: string; b:
       <h2 className="h2 flex items-center gap-2">{name} <span className="text-xs text-muted font-normal">{fmtNum(b.accounts)} contas pagantes</span></h2>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Kpi label="Tempo poupado" value={fmtH(b.minutesSaved)} note={`${hoursPerMonth(b.minutesSaved, months, b.accounts).toLocaleString("pt-PT", { maximumFractionDigits: 1 })} h por conta por mês · medido`} tone="good" />
-        <Kpi label="Valor desse tempo" value={fmtEur0(b.timeValueCents)} note={`a ${fmtEur0(hourValueCents)}/h · pressuposto editável`} />
+        <Kpi label="Valor desse tempo" value={fmtEur0(b.timeValueCents)} note={hourNote(b)} />
         <Kpi label="Retorno por cada € pago" value={fmtX(b.roiTime)} tone={roiTone} note={<>só com o tempo poupado{b.roiWithBusiness != null ? <> · com negócio protegido: <strong>{fmtX(b.roiWithBusiness)}</strong></> : null}</>} />
         <Kpi label="Negócio protegido (estimado)" value={l.protectedCommissionCents != null ? fmtEur0(l.protectedCommissionCents) : "–"}
           note={l.protectedDeals != null ? `${l.protectedDeals.toLocaleString("pt-PT", { maximumFractionDigits: 1 })} negócios que se perderiam sem resposta fora de horas` : "amostra ainda insuficiente para estimar"} />
@@ -85,7 +92,7 @@ function ComoLer() {
   return (
     <section className="card text-sm space-y-2">
       <h2 className="h2">Como ler estes números</h2>
-      <p><Pill tone="verde">medido</Pill> Vem diretamente dos eventos dos softwares: tarefas feitas pela IA, leads, tempos de resposta, visitas e negócios. O tempo poupado usa o tempo de referência de cada tarefa (separador Pressupostos); só conta quando a IA fez ou ajudou a fazer a tarefa.</p>
+      <p><Pill tone="verde">medido</Pill> Vem diretamente dos eventos dos softwares: tarefas feitas pela IA, leads, tempos de resposta, visitas e negócios. O tempo à mão de cada tarefa é medido automaticamente quando os utilizadores a fazem sem a IA; o valor da hora de cada conta sai da faturação média e das horas de trabalho que o utilizador indica no onboarding. Os valores do separador Pressupostos só servem de reserva enquanto estes dados não existem.</p>
       <p><Pill tone="amarelo">estimado</Pill> O negócio protegido compara, nos nossos próprios dados, quantas leads chegam a visita e a negócio quando a resposta é rápida e quando passa de uma hora. Essa diferença aplica-se às leads que a IA atendeu fora de horas, que sem ela só teriam resposta no dia seguinte. Só aparece com amostra suficiente nos dois grupos.</p>
       <p><Pill>influenciado</Pill> Negócios cuja primeira resposta foi da IA. Mostra a contribuição, não prova que o negócio não acontecia sem ela; por isso não entra no retorno.</p>
     </section>
@@ -107,11 +114,11 @@ function Tarefas({ name, b }: { name: string; b: ImpactBlock }) {
               <td className="num text-right">{t.known ? fmtNum(t.manualMinutes) : "–"}</td>
               <td className="num text-right">{t.known ? fmtNum(t.remainingMinutes) : "–"}</td>
               <td className="num text-right font-semibold">{t.known ? fmtH(t.minutesSaved) : "–"}</td>
-              <td>{!t.known ? <Pill tone="aviso">fora do catálogo</Pill> : t.validated ? <Pill tone="verde">validado</Pill> : <Pill tone="amarelo">a validar</Pill>}</td>
+              <td>{!t.known ? <Pill tone="aviso">fora do catálogo</Pill> : t.measured ? <Pill tone="verde">medido ({fmtNum(t.samples)} à mão)</Pill> : t.validated ? <Pill tone="verde">validado</Pill> : <Pill tone="amarelo">estimativa · {fmtNum(t.samples)} medições</Pill>}</td>
             </tr>))}</tbody>
         </table>
       )}
-      <p className="text-xs text-muted mt-3">Tempo poupado = execuções feitas ou ajudadas pela IA × (minutos à mão − minutos que ficam para a pessoa). Tarefas fora do catálogo não contam até terem tempo de referência.</p>
+      <p className="text-xs text-muted mt-3">Tempo poupado = execuções feitas ou ajudadas pela IA × (minutos à mão − minutos que ficam para a pessoa). Os minutos à mão são a mediana das execuções feitas pela pessoa (com human_seconds) a partir da amostra mínima; até lá usa-se a estimativa do catálogo. Tarefas fora do catálogo não contam.</p>
     </section>
   );
 }
@@ -166,11 +173,12 @@ function Contas({ accounts, swName, months }: { accounts: Awaited<ReturnType<typ
     <section className="card overflow-x-auto">
       <p className="text-sm text-muted mb-3">As contas com retorno alto são candidatas a caso de estudo e testemunho; as que ficam abaixo de 1× correm risco de cancelar e geram um alerta.</p>
       <table className="tbl">
-        <thead><tr><th>Conta</th><th>Software</th><th className="text-right">Horas/mês</th><th className="text-right">Valor do tempo</th><th className="text-right">Pago</th><th className="text-right">Retorno</th><th className="text-right">Fora de horas pela IA</th><th className="text-right">Visitas pela IA</th><th className="text-right">Negócio protegido</th><th></th></tr></thead>
+        <thead><tr><th>Conta</th><th>Software</th><th className="text-right">Horas/mês</th><th className="text-right">Valor/hora</th><th className="text-right">Valor do tempo</th><th className="text-right">Pago</th><th className="text-right">Retorno</th><th className="text-right">Fora de horas pela IA</th><th className="text-right">Visitas pela IA</th><th className="text-right">Negócio protegido</th><th></th></tr></thead>
         <tbody>{accounts.map((a) => (
           <tr key={`${a.softwareId}-${a.orgId}`}>
             <td>{a.orgName}</td><td>{swName(a.softwareId)}</td>
             <td className="num text-right">{hoursPerMonth(a.minutesSaved, months).toLocaleString("pt-PT", { maximumFractionDigits: 1 })}</td>
+            <td className="num text-right">{fmtEur0(a.hourValueCents)}<div className="text-xs text-muted font-sans">{a.hourValueSource === "onboarding" ? "onboarding" : "reserva"}</div></td>
             <td className="num text-right">{fmtEur0(a.timeValueCents)}</td>
             <td className="num text-right">{a.costCents ? fmtEur0(a.costCents) : "trial"}</td>
             <td className={`num text-right font-semibold ${a.roiTime == null ? "" : a.roiTime >= 3 ? "text-good" : a.roiTime >= 1 ? "text-warn" : "text-bad"}`}>{fmtX(a.roiTime)}</td>
@@ -184,31 +192,40 @@ function Contas({ accounts, swName, months }: { accounts: Awaited<ReturnType<typ
   );
 }
 
-async function Pressupostos({ ids, swName, settings }: { ids: string[]; swName: (id: string) => string; settings: Awaited<ReturnType<typeof settingsFor>> }) {
+async function Pressupostos({ ids, swName, settings, data }: { ids: string[]; swName: (id: string) => string; settings: Awaited<ReturnType<typeof settingsFor>>; data: Awaited<ReturnType<typeof loadImpact>> }) {
   const catalog = await catalogFor(ids);
   return (
     <div className="space-y-6">
       <section className="card text-sm text-muted">
-        Os tempos de referência são o pressuposto principal do tempo poupado: devem ser medidos com utilizadores reais (cronometrar a tarefa feita à mão e com o software) e marcados como validados. Enquanto não forem, os números aparecem como "a validar". Todas as alterações ficam no registo de auditoria.
+        Os pressupostos calculam-se sozinhos a partir dos dados de cada conta. O <strong>valor da hora</strong> vem da faturação média e das horas de trabalho que o utilizador indica no onboarding (evento account.profile_updated). O <strong>tempo à mão</strong> de cada tarefa é a mediana do tempo que os utilizadores gastam quando a fazem sem a IA (task.completed com by = human e human_seconds). Os valores abaixo só se usam como reserva enquanto esses dados não existem. Todas as alterações ficam no registo de auditoria.
       </section>
       {ids.map((id) => {
         const s = settings.get(id)!;
         const rows = catalog.filter((c) => c.softwareId === id);
+        const b = data.bySoftware.get(id)!;
+        const refs = data.catalogRefs.get(id) ?? [];
+        const measuredN = refs.filter((r) => r.measured).length;
         return (
           <section key={id} className="space-y-3">
             <h2 className="h2">{swName(id)}</h2>
-            <div className="card"><SettingsForm softwareId={id} hourValue={s.hourValueCents / 100} fastResponseMinutes={s.fastResponseMinutes} minSample={s.minSample} /></div>
-            {rows.map((t) => (
+            <div className="grid sm:grid-cols-2 gap-3">
+              <Kpi label="Valor da hora (automático)" value={b.hourValue.medianCents != null ? `${fmtEur0(b.hourValue.medianCents)}/h` : "–"}
+                note={b.hourValue.accounts ? `mediana de ${b.hourValue.fromProfile} de ${b.hourValue.accounts} contas com onboarding; as restantes usam a reserva` : "sem contas com dados no período"} />
+              <Kpi label="Tempos à mão medidos automaticamente" value={`${measuredN} de ${refs.length}`} note={`tarefas com pelo menos ${s.minSample} execuções feitas à mão no período`} />
+            </div>
+            <div className="card"><SettingsForm softwareId={id} hourValue={s.hourValueCents / 100} defaultWeeklyHours={s.defaultWeeklyHours} fastResponseMinutes={s.fastResponseMinutes} minSample={s.minSample} /></div>
+            {rows.map((t) => { const ref = refs.find((r) => r.key === t.key); return (
               <details key={t.id} className="card">
                 <summary className="cursor-pointer flex flex-wrap gap-2 items-center">
                   <span className="font-semibold">{t.label}</span>
-                  <span className="text-sm text-muted num">{fmtNum(Number(t.manualMinutes))} → {fmtNum(Number(t.remainingMinutes))} min</span>
-                  {t.validated ? <Pill tone="verde">validado</Pill> : <Pill tone="amarelo">a validar</Pill>}
+                  {ref?.measured
+                    ? <><span className="text-sm num">{fmtNum(Math.round(ref.manualMinutes * 10) / 10)} → {fmtNum(Number(t.remainingMinutes))} min</span><Pill tone="verde">medido em {fmtNum(ref.samples ?? 0)} execuções à mão</Pill><span className="text-xs text-muted">reserva: {fmtNum(Number(t.manualMinutes))} min</span></>
+                    : <><span className="text-sm text-muted num">{fmtNum(Number(t.manualMinutes))} → {fmtNum(Number(t.remainingMinutes))} min</span>{t.validated ? <Pill tone="verde">validado</Pill> : <Pill tone="amarelo">estimativa · {fmtNum(ref?.samples ?? 0)} de {s.minSample} medições</Pill>}</>}
                   {!t.active ? <Pill>não conta</Pill> : null}
                 </summary>
                 <div className="mt-3"><TaskForm softwareId={id} t={{ ...t }} /></div>
               </details>
-            ))}
+            ); })}
             <div className="card"><div className="text-sm font-semibold mb-2">Nova tarefa</div><TaskForm softwareId={id} /></div>
           </section>
         );

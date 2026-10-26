@@ -10,14 +10,16 @@ function Msg({ s }: { s: Result }) {
   return null;
 }
 
-export function SettingsForm({ softwareId, hourValue, fastResponseMinutes, minSample }: { softwareId: string; hourValue: number; fastResponseMinutes: number; minSample: number }) {
+export function SettingsForm({ softwareId, hourValue, defaultWeeklyHours, fastResponseMinutes, minSample }: { softwareId: string; hourValue: number; defaultWeeklyHours: number; fastResponseMinutes: number; minSample: number }) {
   const [s, action, pending] = useActionState(saveSettings, undefined);
   const k = `set-${softwareId}`;
   return (
     <form action={action} className="space-y-3">
       <input type="hidden" name="softwareId" value={softwareId} />
-      <div className="grid sm:grid-cols-3 gap-3">
-        <div><label className="label" htmlFor={`${k}-h`}>Valor de uma hora do utilizador (€)</label><input id={`${k}-h`} name="hourValue" type="number" step="0.5" min="1" defaultValue={hourValue} className="input" required /></div>
+      <div className="text-sm font-semibold">Valores de reserva e regras de cálculo</div>
+      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div><label className="label" htmlFor={`${k}-h`}>Valor da hora sem onboarding (€)</label><input id={`${k}-h`} name="hourValue" type="number" step="0.5" min="1" defaultValue={hourValue} className="input" required /></div>
+        <div><label className="label" htmlFor={`${k}-w`}>Horas por semana se não indicadas</label><input id={`${k}-w`} name="defaultWeeklyHours" type="number" step="1" min="1" max="100" defaultValue={defaultWeeklyHours} className="input" required /></div>
         <div><label className="label" htmlFor={`${k}-f`}>Resposta rápida até (min)</label><input id={`${k}-f`} name="fastResponseMinutes" type="number" step="1" min="1" defaultValue={fastResponseMinutes} className="input" required /></div>
         <div><label className="label" htmlFor={`${k}-m`}>Amostra mínima por grupo (leads)</label><input id={`${k}-m`} name="minSample" type="number" step="1" min="10" defaultValue={minSample} className="input" required /></div>
       </div>
