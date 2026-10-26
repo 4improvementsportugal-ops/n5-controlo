@@ -5,11 +5,11 @@ import { eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { SESSION_COOKIE, verifySession, type SessionPayload, type TeamRole } from "./session";
 
-export type Module = "painel" | "comunidades" | "pipeline" | "campanhas" | "receita" | "reativacao" | "impacto" | "custos" | "alertas" | "definicoes";
+export type Module = "painel" | "comunidades" | "pipeline" | "campanhas" | "receita" | "reativacao" | "impacto" | "chat" | "custos" | "alertas" | "definicoes";
 
 // Regras de acesso da especificação: sócios e direção de operações veem tudo;
-// colaboradores veem Comunidades e Pipeline dos softwares atribuídos (sem o ecrã de custos).
-const COLLABORATOR_MODULES: Module[] = ["comunidades", "pipeline"];
+// colaboradores veem Comunidades, Pipeline e Chat dos softwares atribuídos (sem o ecrã de custos).
+const COLLABORATOR_MODULES: Module[] = ["comunidades", "pipeline", "chat"];
 
 export function canSee(role: TeamRole, module: Module): boolean {
   if (role === "socio" || role === "direcao_operacoes") return true;

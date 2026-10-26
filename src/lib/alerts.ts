@@ -1,12 +1,12 @@
 import "server-only";
 import { and, eq, ne, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
-import { businessHoursBetween, monthKey, previousMonthKey } from "./metrics";
+import { businessHoursBetween, daysUntil, deadlineStatus, DUE_SOON_DAYS, monthKey, previousMonthKey } from "./metrics";
 import { postSlackMessage } from "./slack";
 import { loadImpact } from "./impact";
 
 type Severity = "critico" | "aviso" | "informacao";
-type Module = "comunidades" | "pipeline" | "campanhas" | "receita" | "sistema" | "impacto";
+type Module = "comunidades" | "pipeline" | "campanhas" | "receita" | "sistema" | "impacto" | "chat";
 
 export interface AlertInput {
   module: Module;
@@ -193,6 +193,23 @@ export async function evaluateAlerts(now = new Date()): Promise<{ checked: numbe
     if (cur !== undefined && prev !== undefined && cur < prev) {
       await bump({ module: "receita", softwareId: sw.id, severity: "aviso", title: `MRR a cair: ${sw.name}`,
         detail: `${(cur / 100).toFixed(2)} € contra ${(prev / 100).toFixed(2)} € no mês anterior`, dedupeKey: `mrr-cair:${sw.id}:${thisMonth}` });
+    }
+  }
+
+  // --- Pipeline: prazos ultrapassados, a vencer hoje e a chegar
+  const withDue = await db.select().from(schema.roadmapItems).where(sql`${schema.roadmapItems.dueDate} is not null and ${schema.roadmapItems.phase} <> 'producao'`);
+  for (const i of withDue) {
+    const st = deadlineStatus(i.dueDate, i.phase, now);
+    const d = daysUntil(i.dueDate!, now);
+    if (st === "atrasado") {
+      await bump({ module: "pipeline", softwareId: i.softwareId, severity: "aviso", title: `Prazo ultrapassado: ${i.code} ${i.title}`,
+        detail: `${-d} dia(s) depois do prazo de ${i.dueDate}, ainda em ${i.phase}`, dedupeKey: `prazo-atrasado:${i.id}:${i.dueDate}` });
+    } else if (st === "hoje") {
+      await bump({ module: "pipeline", softwareId: i.softwareId, severity: "aviso", title: `Prazo hoje: ${i.code} ${i.title}`,
+        detail: `Ainda em ${i.phase}`, dedupeKey: `prazo-hoje:${i.id}:${i.dueDate}` });
+    } else if (st === "a_chegar") {
+      await bump({ module: "pipeline", softwareId: i.softwareId, severity: "informacao", title: `Prazo a chegar: ${i.code} ${i.title}`,
+        detail: `Faltam ${d} dia(s) (prazo ${i.dueDate}, aviso a ${DUE_SOON_DAYS} dias); fase atual: ${i.phase}`, dedupeKey: `prazo-a-chegar:${i.id}:${i.dueDate}` });
     }
   }
 

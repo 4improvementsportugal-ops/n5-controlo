@@ -10,6 +10,11 @@ import { postSlackMessage } from "@/lib/slack";
 
 type Phase = typeof schema.roadmapItems.$inferSelect.phase;
 
+function dueDate(v: FormDataEntryValue | null): string | null {
+  const s = String(v ?? "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+}
+
 function int(v: FormDataEntryValue | null, fallback: number) { const n = Number(v); return Number.isFinite(n) ? n : fallback; }
 
 export async function createItem(form: FormData) {
@@ -21,6 +26,7 @@ export async function createItem(form: FormData) {
     code, softwareId, title: String(form.get("title") ?? "").trim(), description: String(form.get("description") ?? "") || null,
     origin: (String(form.get("origin") ?? "equipa")) as "equipa", impact: int(form.get("impact"), 1), reach: int(form.get("reach"), 0),
     confidence: int(form.get("confidence"), 50), effort: Math.max(1, int(form.get("effort"), 1)),
+    dueDate: dueDate(form.get("dueDate")),
   }).returning();
   await audit(`user:${user.sub}`, "roadmap.created", "roadmap_item", row.id, null, row);
   redirect(`/pipeline/${row.id}`);
@@ -41,6 +47,7 @@ export async function updateItem(id: number, _prev: { error?: string; ok?: boole
     productEvents: String(form.get("productEvents") ?? "").split(/[,\n]/).map((s) => s.trim()).filter(Boolean),
     sprint: String(form.get("sprint") ?? "") || null,
     version: String(form.get("version") ?? "") || null,
+    dueDate: dueDate(form.get("dueDate")),
   };
   const phase = String(form.get("phase") ?? before.phase) as Phase;
   if (phase !== before.phase) {
@@ -49,7 +56,7 @@ export async function updateItem(id: number, _prev: { error?: string; ok?: boole
   }
   await db.update(schema.roadmapItems).set({ ...next, phase, updatedAt: new Date(), ...(phase !== before.phase ? { phaseChangedAt: new Date() } : {}) })
     .where(eq(schema.roadmapItems.id, id));
-  await audit(`user:${user.sub}`, "roadmap.updated", "roadmap_item", id, { phase: before.phase }, { phase });
+  await audit(`user:${user.sub}`, "roadmap.updated", "roadmap_item", id, { phase: before.phase, dueDate: before.dueDate }, { phase, dueDate: next.dueDate });
   if (phase !== before.phase) await syncFeedbackWithItem(id, phase, `user:${user.sub}`);
   revalidatePath(`/pipeline/${id}`);
   return { ok: true };

@@ -95,3 +95,17 @@ Regras:
 - `deal.closed` pode chegar semanas depois; liga-se à lead pelo `lead`.
 
 Para mostrar ao utilizador ("este mês poupou 12 horas"), o software chama `GET /api/v1/impact?organization=org_...&software=sw_clara&period=30d` com uma chave com a permissão `impact:read`.
+
+## Chat: resumos e pendentes
+
+O Chat não precisa de ligação externa. Os botões "O que se falou (7 dias)" e "Que temas estão pendentes?" cruzam a conversa do canal com o pipeline do software (no canal Geral, com todos os softwares a que a pessoa tem acesso):
+
+- prazos ultrapassados, de hoje ou a chegar (campo "Prazo para produção" do item);
+- mensagens marcadas como pendente e ainda não resolvidas;
+- perguntas sem resposta há mais de 24 h (últimos 14 dias);
+- itens do roadmap falados no chat (pelo código, por exemplo CLA-12, ou por duas palavras do título) que ainda não chegaram a produção;
+- itens do backlog (ideia, descoberta) falados no chat.
+
+Sem modelo de IA, o resumo faz-se por regras (temas, decisões, pendentes). Com `LLM_PROVIDER=bedrock` e `BEDROCK_MODEL_ID`, o mesmo material vai para o modelo no Amazon Bedrock da UE, que escreve o texto corrido; se o pedido falhar, volta às regras.
+
+Arquivo: `/api/cron/chat` corre uma vez por dia e resume por mês as conversas com mais de 90 dias. As mensagens originais não se apagam: ficam acessíveis em "Ver mensagens originais" e na pesquisa.

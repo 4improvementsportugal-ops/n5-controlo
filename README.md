@@ -10,7 +10,8 @@ A especificação completa está no documento "Especificação do Sistema de Con
 | --- | --- | --- |
 | Painel geral | Totais N5 (MRR, ARR, pagantes, gasto, CAC, margem, alertas) e uma linha por software | Todos os módulos |
 | Comunidades | Caixa de feedback com filtros, ficha do feedback (estado, dono, duplicados, item do roadmap, resposta no Slack), membros, changelog, registo manual | Slack (`/feedback`, reações), API `POST /api/v1/feedback` |
-| Pipeline | Roadmap por fase, backlog com pontuação, ficha do item com regras de fase, entregas (DORA), bugs, agentes de código, versões, custos por fornecedor | GitHub (PRs, revisões, deploys, releases), registo manual de custos |
+| Pipeline | Roadmap por fase, backlog com pontuação, ficha do item com regras de fase e prazo para produção, entregas (DORA), bugs, agentes de código, versões, custos por fornecedor, notificações de prazos (ultrapassados, hoje, a chegar nos próximos 3 dias, em curso sem prazo; também em Alertas) | GitHub (PRs, revisões, deploys, releases), registo manual de custos |
+| Chat | Conversa de trabalho por projeto (um canal por software e um Geral): respostas, @menções, códigos do roadmap ligados ao item, marcar decisão ou pendente, fixar, pesquisa em todo o histórico, não lidas. Botões "O que se falou (7 dias)" e "Que temas estão pendentes?", que cruzam a conversa com o pipeline, o roadmap e o backlog. O histórico fica todo guardado; o que tem mais de 90 dias é resumido por mês automaticamente | Escrita no ecrã; resumos por regras ou por IA (Amazon Bedrock na UE) |
 | Campanhas e funil | Totais, funil, campanhas com CPM, CTR, CPC, CPL, registos, pagantes e CAC | Meta Insights (a cada 6 h) ou CSV do Gestor de Anúncios |
 | Utilização e receita | MRR mês a mês (novo, expansão, contração, churn), contas com margem e saúde, utilização (ativos, tempo na app, funcionalidades), trials | Stripe (webhooks), eventos e consumo dos softwares |
 | Reativação | Há quanto tempo cada utilizador não usa (faixas por software e lista de pessoas), regras automáticas por dias sem usar, modelos de comunicação na app e por e-mail (lembrete, dica, novidade, oferta, feedback, fim de trial, reativação), envios e resultados (vistas, cliques, quem voltou) | Eventos dos softwares, Amazon SES, API `GET /api/v1/messages` |
@@ -18,7 +19,7 @@ A especificação completa está no documento "Especificação do Sistema de Con
 | Alertas | Centro de alertas com gravidade, dono, silenciar e resolver; críticos e avisos vão para o Slack interno | Regras a cada 15 min, webhooks, API `POST /api/v1/alerts` |
 | Definições | Softwares, utilizadores e funções, chaves de API, estado das ligações | |
 
-Acessos: sócios e direção de operações veem tudo (incluindo Reativação); colaboradores veem Comunidades e Pipeline dos softwares que lhes forem atribuídos, sem o separador Custos.
+Acessos: sócios e direção de operações veem tudo (incluindo Reativação); colaboradores veem Comunidades, Pipeline e Chat dos softwares que lhes forem atribuídos, sem o separador Custos.
 
 ## Ainda não faz (próximas versões)
 
@@ -107,11 +108,13 @@ Ver `docs/integracoes.md` (Stripe, GitHub, Slack, Meta, comunicações na app e 
 src/app/(app)/        ecrãs dos módulos (server components + server actions)
 src/app/api/v1/       API do núcleo
 src/app/api/webhooks/ Stripe, GitHub, Slack
-src/app/api/cron/     alertas (15 min), MRR (diário), Meta (6 h), reativação (1 h)
+src/app/api/cron/     alertas (15 min), MRR (diário), Meta (6 h), reativação (1 h), arquivo do chat (diário)
 src/lib/metrics.ts    cálculos puros, testados
 src/lib/core.ts       eventos, consumo, direitos, feedback, regras do roadmap
 src/lib/alerts.ts     regras de alerta
 src/lib/engagement*.ts inatividade, regras e envio de comunicações
 src/lib/impact.ts     agregação do módulo Impacto (cálculos em metrics.ts)
+src/lib/chat*.ts      chat: regras puras (pendentes, menções, arquivo) e resumos
+src/lib/llm.ts        modelo de IA para resumos (Bedrock), opcional
 src/db/schema.ts      modelo de dados (Drizzle, Postgres)
 ```

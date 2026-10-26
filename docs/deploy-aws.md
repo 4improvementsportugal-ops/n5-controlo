@@ -10,7 +10,8 @@ Recomendação da especificação: uma conta AWS só para o controlo, dentro da 
 | Base de dados | RDS Postgres 16, `db.t4g.micro` para começar, cópias diárias 7 dias | Sem acesso público; só a partir da tarefa ECS |
 | Segredos | Secrets Manager | `DATABASE_URL`, `SESSION_SECRET`, `STRIPE_WEBHOOK_SECRET`, `GITHUB_WEBHOOK_SECRET`, `SLACK_SIGNING_SECRET`, `SLACK_BOT_TOKEN`, `META_ACCESS_TOKEN`, `CRON_SECRET` |
 | Imagens | ECR | Uma por versão, com a tag do commit |
-| Tarefas agendadas | EventBridge Scheduler → pedido HTTPS com `Authorization: Bearer $CRON_SECRET` | `/api/cron/alerts` a cada 15 min; `/api/cron/mrr` às 02:00; `/api/cron/meta-sync` a cada 6 h; `/api/cron/engagement` de hora a hora |
+| Tarefas agendadas | EventBridge Scheduler → pedido HTTPS com `Authorization: Bearer $CRON_SECRET` | `/api/cron/alerts` a cada 15 min; `/api/cron/mrr` às 02:00; `/api/cron/meta-sync` a cada 6 h; `/api/cron/engagement` de hora a hora; `/api/cron/chat` uma vez por dia |
+| IA dos resumos do Chat (opcional) | Amazon Bedrock em `eu-central-1` | `LLM_PROVIDER=bedrock`, `BEDROCK_MODEL_ID`; o papel da tarefa precisa de `bedrock:InvokeModel` só nesse modelo. Sem isto, os resumos fazem-se por regras |
 | Domínio | Route 53 + ACM | Por exemplo `controlo.n5...` |
 | Registos | CloudWatch Logs, 30 dias | |
 

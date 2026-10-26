@@ -3,7 +3,7 @@ import { useActionState } from "react";
 
 type Item = {
   id: number; title: string; description: string | null; impact: number; reach: number; confidence: number; effort: number;
-  ownerUserId: string | null; agent: boolean; acceptanceCriteria: string | null; productEvents: string[]; sprint: string | null; version: string | null; phase: string;
+  ownerUserId: string | null; agent: boolean; acceptanceCriteria: string | null; productEvents: string[]; sprint: string | null; version: string | null; phase: string; dueDate: string | null;
 };
 
 export function ItemForm({ item, team, phases, action }: {
@@ -14,9 +14,10 @@ export function ItemForm({ item, team, phases, action }: {
   return (
     <form action={formAction} className="card space-y-3">
       <div><label className="label" htmlFor="t">Título</label><input id="t" name="title" defaultValue={item.title} className="input" /></div>
-      <div className="grid sm:grid-cols-3 gap-3">
+      <div className="grid sm:grid-cols-4 gap-3">
         <div><label className="label" htmlFor="ph">Fase</label><select id="ph" name="phase" defaultValue={item.phase} className="input">{phases.map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
         <div><label className="label" htmlFor="ow">Dono</label><select id="ow" name="owner" defaultValue={item.ownerUserId ?? ""} className="input"><option value="">Sem dono</option>{team.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
+        <div><label className="label" htmlFor="due">Prazo para produção</label><input id="due" name="dueDate" type="date" defaultValue={item.dueDate ?? ""} className="input" /></div>
         <div className="flex items-end gap-2 pb-1.5"><input id="ag" name="agent" type="checkbox" defaultChecked={item.agent} className="size-4" /><label htmlFor="ag" className="text-sm">Pode ir para um agente de código</label></div>
       </div>
       <div><label className="label" htmlFor="d">Descrição</label><textarea id="d" name="description" rows={3} defaultValue={item.description ?? ""} className="input" /></div>
