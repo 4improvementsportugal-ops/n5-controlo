@@ -20,7 +20,7 @@ export const roadmapPhase = pgEnum("roadmap_phase", [
 export const roadmapOrigin = pgEnum("roadmap_origin", ["comunidade", "equipa", "cliente", "incidente"]);
 export const alertSeverity = pgEnum("alert_severity", ["critico", "aviso", "informacao"]);
 export const alertStatus = pgEnum("alert_status", ["novo", "visto", "resolvido"]);
-export const alertModule = pgEnum("alert_module", ["comunidades", "pipeline", "campanhas", "receita", "sistema", "impacto"]);
+export const alertModule = pgEnum("alert_module", ["comunidades", "pipeline", "campanhas", "receita", "sistema", "impacto", "chat"]);
 
 // ---------- Equipa (quem usa o sistema de controlo) ----------
 export const users = pgTable("users", {
@@ -203,6 +203,7 @@ export const roadmapItems = pgTable("roadmap_items", {
   productEvents: text("product_events").array().notNull().default([]),
   sprint: text("sprint"),
   version: text("version"),
+  dueDate: date("due_date"), // prazo para chegar a produção (notificações do Pipeline)
   phaseChangedAt: timestamp("phase_changed_at", { withTimezone: true }).notNull().defaultNow(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -416,3 +417,46 @@ export const accountProfiles = pgTable("account_profiles", {
   weeklyHours: numeric("weekly_hours", { precision: 5, scale: 1 }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [primaryKey({ columns: [t.organizationId, t.softwareId] })]);
+
+// ---------- Módulo 7: Chat de trabalho por projeto ----------
+// Um canal por software (o id do software) e o canal "geral". Nada se apaga: editar e apagar ficam registados.
+export const chatKind = pgEnum("chat_kind", ["mensagem", "decisao", "pendente"]);
+export const chatSummaryKind = pgEnum("chat_summary_kind", ["arquivo", "ultimos_dias", "pendentes"]);
+
+export const chatMessages = pgTable("chat_messages", {
+  id: text("id").primaryKey(), // cm_...
+  channel: text("channel").notNull(), // sw_clara, sw_imobiliario, geral
+  userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+  body: text("body").notNull(),
+  kind: chatKind("kind").notNull().default("mensagem"),
+  parentId: text("parent_id"), // resposta a outra mensagem
+  roadmapCodes: text("roadmap_codes").array().notNull().default([]), // CLA-12 citados
+  mentions: uuid("mentions").array().notNull().default([]), // pessoas da equipa mencionadas com @
+  pinned: boolean("pinned").notNull().default(false),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }), // pendente resolvido
+  resolvedBy: uuid("resolved_by"),
+  summaryId: integer("summary_id"), // resumo de arquivo que já cobre esta mensagem (> 90 dias)
+  editedAt: timestamp("edited_at", { withTimezone: true }),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }), // apagada para a equipa; o texto fica guardado
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index("chat_channel_time_idx").on(t.channel, t.createdAt), index("chat_parent_idx").on(t.parentId)]);
+
+export const chatReads = pgTable("chat_reads", {
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  channel: text("channel").notNull(),
+  lastReadAt: timestamp("last_read_at", { withTimezone: true }).notNull(),
+}, (t) => [primaryKey({ columns: [t.userId, t.channel] })]);
+
+export const chatSummaries = pgTable("chat_summaries", {
+  id: serial("id").primaryKey(),
+  channel: text("channel").notNull(),
+  kind: chatSummaryKind("kind").notNull(),
+  periodStart: timestamp("period_start", { withTimezone: true }).notNull(),
+  periodEnd: timestamp("period_end", { withTimezone: true }).notNull(),
+  content: text("content").notNull(), // texto do resumo
+  data: jsonb("data").$type<Record<string, unknown>>(), // pendentes e temas estruturados
+  messages: integer("messages").notNull().default(0),
+  engine: text("engine").notNull(), // "regras" ou o modelo de IA usado
+  createdBy: uuid("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index("chat_summaries_channel_idx").on(t.channel, t.kind, t.periodStart)]);

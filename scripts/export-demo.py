@@ -23,7 +23,8 @@ OUT = os.path.join(os.path.dirname(__file__), "..", "demo")
 PAGES = [
     "", "comunidades", "comunidades?vista=membros", "comunidades?vista=changelog", "comunidades?vista=novo",
     "pipeline", "pipeline?vista=backlog", "pipeline?vista=entregas", "pipeline?vista=agentes", "pipeline?vista=versoes",
-    "pipeline?vista=custos", "pipeline?vista=novo",
+    "pipeline?vista=custos", "pipeline?vista=notificacoes", "pipeline?vista=novo",
+    "chat", "chat?canal=sw_clara", "chat?canal=sw_imobiliario",
     "campanhas", "receita", "receita?vista=contas", "receita?vista=utilizacao", "receita?vista=trials",
     "reativacao", "reativacao?vista=regras", "reativacao?vista=modelos", "reativacao?vista=envios",
     "impacto", "impacto?vista=tarefas", "impacto?vista=leads", "impacto?vista=contas", "impacto?vista=pressupostos",
@@ -42,7 +43,7 @@ def static_path(url_path: str, query: str) -> str:
     """/n5-controlo/demo/pipeline?vista=backlog -> pipeline/vista-backlog/"""
     rel = url_path[len(BASE):].strip("/")
     q = parse_qs(query)
-    for key in ("vista", "estado"):
+    for key in ("vista", "estado", "canal"):
         if key in q:
             rel = f"{rel}/{key}-{q[key][0]}".strip("/")
             break

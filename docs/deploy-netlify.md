@@ -23,7 +23,7 @@ Recomendado: um projeto Supabase em Frankfurt (`eu-central-1`) ou Irlanda (`eu-w
 | `APP_URL` | Endereço do site, por exemplo `https://n5-controlo.netlify.app` |
 | `DEMO_DATA` e `NEXT_PUBLIC_DEMO_DATA` | `true` enquanto for demonstração com dados de exemplo; apagar antes de usar dados reais |
 
-As restantes (Stripe, GitHub, Slack, Meta, SES) acrescentam-se quando cada ligação for configurada (`docs/integracoes.md`).
+As restantes (Stripe, GitHub, Slack, Meta, SES, Bedrock para os resumos do Chat) acrescentam-se quando cada ligação for configurada (`docs/integracoes.md`).
 
 3. Deploy. O build aplica as migrações, cria os dados de exemplo se a base estiver vazia e `DEMO_DATA=true`, e compila a app.
 4. Entrar com `socio@exemplo.n5` / `exemplo-n5-2026!` (só com dados de exemplo).
@@ -34,5 +34,6 @@ As restantes (Stripe, GitHub, Slack, Meta, SES) acrescentam-se quando cada liga�
 | --- | --- | --- |
 | `cron-alerts` | a cada 15 min | `/api/cron/alerts` |
 | `cron-engagement` | de hora a hora | `/api/cron/engagement` |
+| `cron-chat` | 03:23 | `/api/cron/chat` (resume por mês o chat com mais de 90 dias) |
 | `cron-meta-sync` | a cada 6 h | `/api/cron/meta-sync` |
 | `cron-mrr` | 02:00 | `/api/cron/mrr` |

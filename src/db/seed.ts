@@ -25,11 +25,13 @@ async function main() {
     if (n > 0) {
       const [{ t }] = await sql<{ t: number }[]>`select count(*)::int as t from product_events where name = 'task.completed'`;
       if (t === 0) { await seedImpact(); console.log("Dados de exemplo do Impacto criados."); }
-      else console.log("A base de dados já tem utilizadores: seed ignorado.");
+      const [{ c }] = await sql<{ c: number }[]>`select count(*)::int as c from chat_messages`;
+      if (c === 0) { await seedChat(); console.log("Conversas de exemplo do Chat criadas."); }
+      if (t > 0 && c > 0) console.log("A base de dados já tem utilizadores: seed ignorado.");
       await sql.end(); return;
     }
   }
-  await sql`truncate table account_profiles, impact_tasks, impact_settings, outbound_messages, engagement_rules, message_templates, audit_log, webhook_inbox, alerts, campaign_daily, provider_costs, releases, deployments, pull_requests,
+  await sql`truncate table chat_reads, chat_summaries, chat_messages, account_profiles, impact_tasks, impact_settings, outbound_messages, engagement_rules, message_templates, audit_log, webhook_inbox, alerts, campaign_daily, provider_costs, releases, deployments, pull_requests,
     roadmap_items, feedback, usage_records, product_events, invoices, mrr_monthly, subscriptions, persons, organizations,
     api_keys, user_softwares, users, softwares restart identity cascade`;
 
@@ -197,11 +199,11 @@ async function main() {
 
   // ---- Roadmap, PRs, deploys, versões
   const items = [
-    { sw: "sw_clara", code: "CLA-1", title: "Marcar visitas por voz", phase: "desenvolvimento" as const, impact: 3, reach: 120, confidence: 80, effort: 5, agent: false, sprint: "S44", version: "0.9.0" },
-    { sw: "sw_clara", code: "CLA-2", title: "Resumo da chamada na ficha da lead", phase: "testes" as const, impact: 2, reach: 150, confidence: 90, effort: 2, agent: true, sprint: "S44", version: "0.9.0" },
-    { sw: "sw_clara", code: "CLA-3", title: "Vocabulário de moradas para a transcrição", phase: "ideia" as const, impact: 2, reach: 80, confidence: 50, effort: 3, agent: false, sprint: null, version: null },
-    { sw: "sw_clara", code: "CLA-4", title: "Relatório semanal por WhatsApp", phase: "descoberta" as const, impact: 1, reach: 60, confidence: 60, effort: 3, agent: true, sprint: null, version: null },
-    { sw: "sw_imobiliario", code: "IMO-1", title: "Distribuição de leads por zona", phase: "design" as const, impact: 3, reach: 15, confidence: 70, effort: 8, agent: false, sprint: null, version: null },
+    { sw: "sw_clara", code: "CLA-1", title: "Marcar visitas por voz", phase: "desenvolvimento" as const, impact: 3, reach: 120, confidence: 80, effort: 5, agent: false, sprint: "S44", version: "0.9.0", due: -2 },
+    { sw: "sw_clara", code: "CLA-2", title: "Resumo da chamada na ficha da lead", phase: "testes" as const, impact: 2, reach: 150, confidence: 90, effort: 2, agent: true, sprint: "S44", version: "0.9.0", due: 2 },
+    { sw: "sw_clara", code: "CLA-3", title: "Vocabulário de moradas para a transcrição", phase: "ideia" as const, impact: 2, reach: 80, confidence: 50, effort: 3, agent: false, sprint: null, version: null, due: null },
+    { sw: "sw_clara", code: "CLA-4", title: "Relatório semanal por WhatsApp", phase: "descoberta" as const, impact: 1, reach: 60, confidence: 60, effort: 3, agent: true, sprint: null, version: null, due: 0 },
+    { sw: "sw_imobiliario", code: "IMO-1", title: "Distribuição de leads por zona", phase: "design" as const, impact: 3, reach: 15, confidence: 70, effort: 8, agent: false, sprint: null, version: null, due: 10 },
   ];
   for (const it of items) {
     const [row] = await db.insert(schema.roadmapItems).values({
@@ -209,6 +211,7 @@ async function main() {
       agent: it.agent, sprint: it.sprint, version: it.version, ownerUserId: ["desenvolvimento", "testes"].includes(it.phase) ? socio.id : null,
       acceptanceCriteria: ["desenvolvimento", "testes"].includes(it.phase) ? "- Funciona em telemóvel\n- Regista o evento de produto" : null,
       productEvents: it.phase === "testes" ? ["call.completed", "call.analysis_viewed"] : [], origin: "comunidade",
+      dueDate: it.due == null ? null : new Date(now + it.due * day).toISOString().slice(0, 10),
     }).returning();
     if (it.code === "CLA-1") await sql`update feedback set roadmap_item_id = ${row.id} where title like 'Poder marcar visitas%'`;
     if (it.code === "IMO-1") await sql`update feedback set roadmap_item_id = ${row.id} where title like 'Distribuir leads%'`;
@@ -255,6 +258,8 @@ async function main() {
       });
     }
   }
+
+  await seedChat();
 
   // ---- Alguns alertas de exemplo
   await db.insert(schema.alerts).values([
@@ -367,3 +372,59 @@ async function seedImpact() {
 }
 
 main().catch(async (e) => { console.error(e); await sql.end(); process.exit(1); });
+
+// Chat: conversas de exemplo por canal. Inclui meses com mais de 90 dias para o arquivo (o resumo faz-se em /api/cron/chat).
+async function seedChat() {
+  const users = await sql<{ id: string; name: string; role: string }[]>`select id, name, role from users order by created_at`;
+  const socio = users.find((u) => u.role === "socio") ?? users[0];
+  const colab = users.find((u) => u.role === "colaborador") ?? users[0];
+  if (!socio) return;
+  const codes = (t: string) => [...new Set(t.match(/\b[A-Z]{2,5}-\d{1,5}\b/g) ?? [])];
+  const at = (daysAgo: number, hour: number) => { const d = new Date(now - daysAgo * day); d.setUTCHours(hour, (daysAgo * 7) % 60, 0, 0); return d; };
+  type M = { key?: string; ch: string; who: typeof socio; body: string; d: number; h: number; kind?: "mensagem" | "decisao" | "pendente"; reply?: string; pinned?: boolean; resolved?: boolean; mention?: typeof socio };
+  const msgs: M[] = [
+    // Arquivo (mais de 90 dias)
+    { ch: "sw_clara", who: socio, body: "Arranque do piloto da Clara com 20 consultores. Objetivo: 3 consultores ativos por agência na mesma semana.", d: 160, h: 9, kind: "decisao" },
+    { ch: "sw_clara", who: colab, body: "A transcrição falha em moradas com números de porta. Vou juntar exemplos.", d: 158, h: 14 },
+    { ch: "sw_clara", who: socio, body: "Preço do piloto fica em 29 € por consultor sem IVA.", d: 152, h: 10, kind: "decisao" },
+    { ch: "sw_clara", who: colab, body: "Falta decidir se o relatório semanal vai por e-mail ou WhatsApp.", d: 150, h: 16, kind: "pendente" },
+    { ch: "sw_clara", who: socio, body: "Primeiras 5 agências com o número de WhatsApp ligado.", d: 128, h: 11 },
+    { ch: "sw_clara", who: colab, body: "O webhook da Meta caiu durante a noite, já repus.", d: 125, h: 8 },
+    { ch: "sw_clara", who: socio, body: "Vamos usar o Bedrock na UE para os resumos das chamadas.", d: 121, h: 15, kind: "decisao" },
+    { ch: "geral", who: socio, body: "Reunião mensal passa para a primeira segunda-feira de cada mês.", d: 140, h: 9, kind: "decisao" },
+    { ch: "geral", who: colab, body: "Atualizei o guia de onboarding das agências.", d: 135, h: 17 },
+    // Últimos 90 dias
+    { ch: "sw_clara", who: socio, body: "Ficou combinado: o CLA-2 entra na versão 0.9.0 com o resumo da chamada na ficha.", d: 40, h: 10, kind: "decisao" },
+    { ch: "sw_clara", who: colab, body: "Comecei o CLA-1. A marcação por voz já reconhece dia e hora.", d: 20, h: 11 },
+    { ch: "sw_clara", who: socio, body: "Ótimo. Lembra-te que o prazo do CLA-1 é curto, as agências pediram para a feira.", d: 19, h: 9 },
+    { key: "q1", ch: "sw_clara", who: socio, body: "@Colaborador consegues ver porque é que o resumo da chamada não aparece na ficha da lead em algumas contas?", d: 6, h: 10, mention: colab },
+    { ch: "sw_clara", who: colab, body: "Vi: só acontece quando a chamada dura menos de 20 s. Corrijo no CLA-2.", d: 6, h: 12, reply: "q1" },
+    { ch: "sw_clara", who: colab, body: "A transcrição continua a trocar moradas (Rua de Cedofeita saiu \"Rua dos Feitos\"). Precisamos do vocabulário de moradas.", d: 5, h: 15 },
+    { ch: "sw_clara", who: socio, body: "Quem pode fazer a lista de moradas do Porto para o CLA-3?", d: 5, h: 16 },
+    { ch: "sw_clara", who: socio, body: "Falta definir o preço do pack extra de minutos de chamadas.", d: 4, h: 10, kind: "pendente", pinned: true },
+    { ch: "sw_clara", who: colab, body: "Testes do CLA-2 em 3 contas: tudo bem em telemóvel.", d: 3, h: 14 },
+    { ch: "sw_clara", who: socio, body: "Relatório semanal vai por WhatsApp e por e-mail, quem preferir escolhe.", d: 3, h: 17, kind: "decisao" },
+    { ch: "sw_clara", who: colab, body: "Tenho de pedir à Meta a aprovação do modelo do relatório semanal por WhatsApp (CLA-4).", d: 2, h: 9, kind: "pendente" },
+    { ch: "sw_clara", who: socio, body: "Já resolvemos o acesso dos consultores novos à app.", d: 2, h: 11, kind: "pendente", resolved: true },
+    { ch: "sw_clara", who: colab, body: "Hoje vou fechar o CLA-1. Falta só o caso de \"amanhã de manhã\".", d: 1, h: 9 },
+    { ch: "sw_clara", who: socio, body: "@Colaborador avisa quando estiver em testes, quero experimentar com a agência de Braga.", d: 0, h: 8, mention: colab },
+    { ch: "sw_imobiliario", who: socio, body: "Os brokers pedem a distribuição de leads por zona (IMO-1). Prioridade para o próximo trimestre.", d: 12, h: 10, kind: "decisao" },
+    { ch: "sw_imobiliario", who: socio, body: "Temos de escolher se a zona vem do código postal ou do mapa. Alguém tem opinião?", d: 4, h: 15 },
+    { ch: "sw_imobiliario", who: socio, body: "Falta a lista de zonas da agência piloto em Lisboa.", d: 3, h: 11, kind: "pendente" },
+    { ch: "geral", who: socio, body: "Bem-vindos ao chat do N5. Cada software tem o seu canal; aqui ficam os temas de todos.", d: 30, h: 9, pinned: true },
+    { ch: "geral", who: colab, body: "O módulo de Impacto já mostra o tempo poupado por tarefa.", d: 8, h: 16 },
+    { ch: "geral", who: socio, body: "Revisão de custos da AWS na sexta-feira. Tragam números de uso.", d: 2, h: 10 },
+  ];
+  const ids = new Map<string, string>();
+  let k = 0;
+  for (const m of msgs) {
+    const mid = `cm_ex${(++k).toString().padStart(4, "0")}`;
+    if (m.key) ids.set(m.key, mid);
+    const created = at(m.d, m.h);
+    await db.insert(schema.chatMessages).values({
+      id: mid, channel: m.ch, userId: m.who.id, body: m.body, kind: m.kind ?? "mensagem", parentId: m.reply ? ids.get(m.reply)! : null,
+      roadmapCodes: codes(m.body), mentions: m.mention ? [m.mention.id] : [], pinned: !!m.pinned,
+      resolvedAt: m.resolved ? new Date(created.getTime() + 3600e3) : null, resolvedBy: m.resolved ? m.who.id : null, createdAt: created,
+    }).onConflictDoNothing();
+  }
+}

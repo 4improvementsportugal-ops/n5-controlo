@@ -5,6 +5,7 @@ import { canSee, requireUser, scopeSoftwares } from "@/lib/auth";
 import { readFilters } from "@/lib/filters";
 import { delivery, roadmap, softwareCosts, softwaresFor } from "@/lib/queries";
 import { fmtDate, fmtDateTime, fmtEur, fmtNum, fmtPct, LABELS } from "@/lib/format";
+import { daysUntil, deadlineStatus, DUE_SOON_DAYS } from "@/lib/metrics";
 import { Empty, Kpi, PageHeader, Pill, Tabs, withParams } from "@/components/ui";
 import { createItem, publishRelease, saveProviderCost, saveRelease } from "./actions";
 
@@ -19,10 +20,12 @@ export default async function Pipeline({ searchParams }: { searchParams: Promise
   const ids = scopeSoftwares(user, filters.software, sws);
   const vista = typeof sp.vista === "string" ? sp.vista : "roadmap";
   const showCosts = canSee(user.role, "custos");
+  const due = ids.length ? await db.select().from(schema.roadmapItems).where(inArray(schema.roadmapItems.softwareId, ids)) : [];
+  const urgent = due.filter((i) => ["atrasado", "hoje", "a_chegar"].includes(deadlineStatus(i.dueDate, i.phase))).length;
   const tabs = [
     { key: "roadmap", label: "Roadmap" }, { key: "backlog", label: "Backlog" }, { key: "entregas", label: "Entregas e qualidade" },
     { key: "agentes", label: "Agentes de código" }, { key: "versoes", label: "Versões" },
-    ...(showCosts ? [{ key: "custos", label: "Custos" }] : []), { key: "novo", label: "Novo item" },
+    ...(showCosts ? [{ key: "custos", label: "Custos" }] : []), { key: "notificacoes", label: urgent ? `Notificações (${urgent})` : "Notificações" }, { key: "novo", label: "Novo item" },
   ].map((t) => ({ ...t, href: withParams("/pipeline", sp, { vista: t.key }) }));
   const swName = (id: string) => sws.find((s) => s.id === id)?.name ?? id;
   const mySoftwares = sws.filter((s) => ids.includes(s.id));
@@ -36,6 +39,7 @@ export default async function Pipeline({ searchParams }: { searchParams: Promise
       {vista === "agentes" ? <Agentes ids={ids} sp={sp} /> : null}
       {vista === "versoes" ? <Versoes ids={ids} softwares={mySoftwares} swName={swName} /> : null}
       {vista === "custos" && showCosts ? <Custos ids={ids} softwares={mySoftwares} /> : null}
+      {vista === "notificacoes" ? <Notificacoes items={due} swName={swName} userId={user.sub} meus={sp.meus === "1"} sp={sp} /> : null}
       {vista === "novo" ? <NovoItem softwares={mySoftwares} /> : null}
     </>
   );
@@ -72,7 +76,7 @@ async function RoadmapViews({ ids, vista, swName }: { ids: string[]; vista: stri
               <ul className="space-y-2">{col.map((i) => (
                 <li key={i.id} className="border border-line rounded-md p-2 bg-canvas/50">
                   <Link href={`/pipeline/${i.id}`} className="block hover:underline text-sm font-medium"><span className="num text-muted text-xs">{i.code}</span> {i.title}</Link>
-                  <div className="text-xs text-muted mt-1 flex flex-wrap gap-1 items-center">{swName(i.softwareId)} · {i.owner ?? "sem dono"}{i.agent ? <Pill tone="accent">agente</Pill> : null}{i.sprint ? <span>· {i.sprint}</span> : null}</div>
+                  <div className="text-xs text-muted mt-1 flex flex-wrap gap-1 items-center">{swName(i.softwareId)} · {i.owner ?? "sem dono"}{i.agent ? <Pill tone="accent">agente</Pill> : null}{i.sprint ? <span>· {i.sprint}</span> : null}<DuePill due={i.dueDate} phase={i.phase} /></div>
                 </li>))}</ul>
             </section>
           );
@@ -208,6 +212,7 @@ function NovoItem({ softwares }: { softwares: { id: string; name: string }[] }) 
       </div>
       <div><label className="label" htmlFor="i-title">Título</label><input id="i-title" name="title" className="input" required /></div>
       <div><label className="label" htmlFor="i-desc">Descrição</label><textarea id="i-desc" name="description" rows={4} className="input" /></div>
+      <div className="max-w-xs"><label className="label" htmlFor="i-due">Prazo para produção</label><input id="i-due" name="dueDate" type="date" className="input" /></div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div><label className="label" htmlFor="i-imp">Impacto (1–3)</label><input id="i-imp" name="impact" type="number" min={1} max={3} defaultValue={2} className="input" /></div>
         <div><label className="label" htmlFor="i-reach">Alcance (contas)</label><input id="i-reach" name="reach" type="number" min={0} defaultValue={10} className="input" /></div>
@@ -217,4 +222,65 @@ function NovoItem({ softwares }: { softwares: { id: string; name: string }[] }) 
       <button className="btn btn-primary">Criar item</button>
     </form>
   );
+}
+
+const PHASE_ORDER = ["ideia", "descoberta", "design", "desenvolvimento", "testes", "staging", "producao"];
+
+async function Notificacoes({ items, swName, userId, meus, sp }: { items: (typeof schema.roadmapItems.$inferSelect)[]; swName: (id: string) => string; userId: string; meus: boolean; sp: SP }) {
+  const team = await db.select({ id: schema.users.id, name: schema.users.name }).from(schema.users);
+  const owner = (id: string | null) => (id ? team.find((t) => t.id === id)?.name ?? "?" : null);
+  const mine = meus ? items.filter((i) => i.ownerUserId === userId) : items;
+  const withStatus = mine.map((i) => ({ i, st: deadlineStatus(i.dueDate, i.phase) }));
+  const groups: { key: string; title: string; tone: string; note: string; rows: typeof withStatus }[] = [
+    { key: "atrasado", title: "Prazo ultrapassado", tone: "critico", note: "Já deviam estar em produção.", rows: withStatus.filter((x) => x.st === "atrasado").sort((a, b) => a.i.dueDate!.localeCompare(b.i.dueDate!)) },
+    { key: "hoje", title: "Prazo hoje", tone: "aviso", note: "Têm de chegar a produção hoje.", rows: withStatus.filter((x) => x.st === "hoje") },
+    { key: "a_chegar", title: `A chegar ao prazo (${DUE_SOON_DAYS} dias)`, tone: "amarelo", note: "Ainda dá para acabar, mas está perto.", rows: withStatus.filter((x) => x.st === "a_chegar").sort((a, b) => a.i.dueDate!.localeCompare(b.i.dueDate!)) },
+    { key: "sem_prazo", title: "Em curso sem prazo", tone: "neutro", note: "Itens em design, desenvolvimento, testes ou staging sem data: definir prazo para serem acompanhados.", rows: withStatus.filter((x) => x.st === "sem_prazo" && ["design", "desenvolvimento", "testes", "staging"].includes(x.i.phase)) },
+  ];
+  const total = groups.slice(0, 3).reduce((a, g) => a + g.rows.length, 0);
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted max-w-3xl">Avisos de prazos do roadmap. Os atrasados e os que vencem hoje também aparecem em Alertas e no Slack interno; os que chegam ao prazo nos próximos {DUE_SOON_DAYS} dias aparecem como informação.</p>
+        <div className="flex gap-2 text-sm">
+          <Link href={withParams("/pipeline", sp, { vista: "notificacoes" })} className={`tab ${!meus ? "tab-active" : ""}`}>Todos</Link>
+          <Link href={withParams("/pipeline", sp, { vista: "notificacoes", meus: "1" })} className={`tab ${meus ? "tab-active" : ""}`}>Os meus</Link>
+        </div>
+      </div>
+      <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {groups.map((g) => <Kpi key={g.key} label={g.title} value={fmtNum(g.rows.length)} tone={g.key === "atrasado" && g.rows.length ? "bad" : g.key !== "sem_prazo" && g.rows.length ? "warn" : undefined} />)}
+      </section>
+      {total === 0 && !groups[3].rows.length ? <Empty title="Sem prazos em risco">Nenhum item atrasado ou a chegar ao prazo{meus ? " entre os teus" : ""}.</Empty> : null}
+      {groups.filter((g) => g.rows.length).map((g) => (
+        <section key={g.key} className="card overflow-x-auto">
+          <h2 className="h2 flex items-center gap-2"><Pill tone={g.tone}>{g.title}</Pill><span className="text-sm text-muted font-normal">{g.note}</span></h2>
+          <table className="tbl">
+            <thead><tr><th>Item</th><th>Software</th><th>Fase</th><th>Dono</th><th>Prazo</th><th className="text-right">Dias</th></tr></thead>
+            <tbody>{g.rows.map(({ i }) => {
+              const d = i.dueDate ? daysUntil(i.dueDate) : null;
+              const left = PHASE_ORDER.length - 1 - PHASE_ORDER.indexOf(i.phase);
+              return (
+                <tr key={i.id}>
+                  <td><Link href={`/pipeline/${i.id}`} className="underline font-mono text-xs mr-2">{i.code}</Link>{i.title}</td>
+                  <td>{swName(i.softwareId)}</td>
+                  <td>{LABELS.phase[i.phase]}<div className="text-xs text-muted">{left} fases até produção</div></td>
+                  <td>{owner(i.ownerUserId) ?? <Pill tone="aviso">sem dono</Pill>}</td>
+                  <td>{i.dueDate ? fmtDate(i.dueDate) : "–"}</td>
+                  <td className={`num text-right ${d != null && d < 0 ? "text-bad font-semibold" : ""}`}>{d == null ? "–" : d < 0 ? `${-d} em atraso` : d === 0 ? "hoje" : `faltam ${d}`}</td>
+                </tr>
+              );
+            })}</tbody>
+          </table>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function DuePill({ due, phase }: { due: string | null; phase: string }) {
+  const st = deadlineStatus(due, phase);
+  if (!due || st === "concluido") return null;
+  const tone = st === "atrasado" ? "critico" : st === "hoje" || st === "a_chegar" ? "aviso" : "neutro";
+  const d = daysUntil(due);
+  return <Pill tone={tone}>{st === "atrasado" ? `${-d} d em atraso` : st === "hoje" ? "prazo hoje" : `prazo ${fmtDate(due)}`}</Pill>;
 }

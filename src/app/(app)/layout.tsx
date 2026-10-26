@@ -15,6 +15,7 @@ const NAV: { href: string; label: string; module: Module }[] = [
   { href: "/", label: "Painel geral", module: "painel" },
   { href: "/comunidades", label: "Comunidades", module: "comunidades" },
   { href: "/pipeline", label: "Pipeline", module: "pipeline" },
+  { href: "/chat", label: "Chat", module: "chat" },
   { href: "/campanhas", label: "Campanhas e funil", module: "campanhas" },
   { href: "/receita", label: "Utilização e receita", module: "receita" },
   { href: "/reativacao", label: "Reativação", module: "reativacao" },

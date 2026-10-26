@@ -86,3 +86,22 @@ describe("Datas", () => {
     expect(previousMonthKey("2026-10")).toBe("2026-09");
   });
 });
+
+import { daysUntil, deadlineStatus } from "@/lib/metrics";
+
+describe("prazos do pipeline", () => {
+  const now = new Date("2026-10-26T10:00:00Z");
+  it("conta os dias em Lisboa", () => {
+    expect(daysUntil("2026-10-26", now)).toBe(0);
+    expect(daysUntil("2026-10-29", now)).toBe(3);
+    expect(daysUntil("2026-10-20", now)).toBe(-6);
+  });
+  it("classifica o prazo", () => {
+    expect(deadlineStatus("2026-10-20", "desenvolvimento", now)).toBe("atrasado");
+    expect(deadlineStatus("2026-10-26", "testes", now)).toBe("hoje");
+    expect(deadlineStatus("2026-10-28", "design", now)).toBe("a_chegar");
+    expect(deadlineStatus("2026-11-20", "design", now)).toBe("ok");
+    expect(deadlineStatus(null, "design", now)).toBe("sem_prazo");
+    expect(deadlineStatus("2026-10-20", "producao", now)).toBe("concluido");
+  });
+});

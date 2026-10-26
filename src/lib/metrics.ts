@@ -329,3 +329,24 @@ export function leadSummary(leads: LeadRecord[], fastMinutes = 5, minSample = 30
 export function returnMultiple(valueCents: number, costCents: number): number | null {
   return costCents > 0 ? valueCents / costCents : null;
 }
+
+// ---------------- Pipeline: prazos ----------------
+export const DUE_SOON_DAYS = 3;
+export type DeadlineStatus = "atrasado" | "hoje" | "a_chegar" | "ok" | "sem_prazo" | "concluido";
+
+/** Dias entre hoje e o prazo, em dias de calendário de Lisboa (negativo = atrasado). */
+export function daysUntil(dueDate: string, now = new Date()): number {
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Lisbon" }).format(now); // AAAA-MM-DD
+  return Math.round((Date.parse(`${dueDate}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 864e5);
+}
+
+/** Estado do prazo de um item do roadmap. Itens em produção estão concluídos. */
+export function deadlineStatus(dueDate: string | null, phase: string, now = new Date(), soonDays = DUE_SOON_DAYS): DeadlineStatus {
+  if (phase === "producao") return "concluido";
+  if (!dueDate) return "sem_prazo";
+  const d = daysUntil(dueDate, now);
+  if (d < 0) return "atrasado";
+  if (d === 0) return "hoje";
+  if (d <= soonDays) return "a_chegar";
+  return "ok";
+}
