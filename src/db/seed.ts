@@ -23,7 +23,7 @@ async function main() {
     if (process.env.DEMO_DATA !== "true") { console.log("DEMO_DATA não está ativo: sem dados de exemplo."); await sql.end(); return; }
     const [{ n }] = await sql<{ n: number }[]>`select count(*)::int as n from users`;
     if (n > 0) {
-      const [{ t }] = await sql<{ t: number }[]>`select count(*)::int as t from impact_tasks`;
+      const [{ t }] = await sql<{ t: number }[]>`select count(*)::int as t from product_events where name = 'task.completed'`;
       if (t === 0) { await seedImpact(); console.log("Dados de exemplo do Impacto criados."); }
       else console.log("A base de dados já tem utilizadores: seed ignorado.");
       await sql.end(); return;
@@ -273,7 +273,7 @@ async function seedImpact() {
   await db.insert(schema.impactSettings).values([
     { softwareId: "sw_clara", hourValueCents: 2000, fastResponseMinutes: 5, minSample: 30 },
     { softwareId: "sw_imobiliario", hourValueCents: 2500, fastResponseMinutes: 5, minSample: 30 },
-  ]);
+  ]).onConflictDoNothing();
   const basis = "Estimativa inicial da equipa: validar com cronometragem a 5 utilizadores";
   const common: [string, string, number, number][] = [
     ["lead.first_reply", "Primeira resposta a uma lead", 4, 0],
@@ -291,7 +291,7 @@ async function seedImpact() {
     ...common.map(([key, label, m, r]) => ({ softwareId: "sw_imobiliario", key, label, manualMinutes: m.toFixed(2), remainingMinutes: r.toFixed(2), basis })),
     { softwareId: "sw_imobiliario", key: "lead.assignment", label: "Distribuir a lead pelo consultor certo", manualMinutes: "3.00", remainingMinutes: "0.00", basis },
     { softwareId: "sw_imobiliario", key: "team.report", label: "Relatório semanal da equipa para o broker", manualMinutes: "90.00", remainingMinutes: "5.00", basis },
-  ]);
+  ]).onConflictDoNothing();
   {
     const live = (await db.select().from(schema.subscriptions)).filter((x) => x.status !== "canceled");
     let li = 0;
@@ -300,7 +300,8 @@ async function seedImpact() {
       const aiOffAfterHours = ix % 5 === 0; // algumas contas desligam a IA fora de horas: dão o grupo de comparação
       const lowUse = ix % 7 === 3; // contas que quase não usam: aparecem como risco
       const evs: (typeof schema.productEvents.$inferInsert)[] = [];
-      const ev = (name: string, at: Date, properties: Record<string, unknown>) => evs.push({ id: id("evt"), softwareId: sub.softwareId, name, occurredAt: at, organizationId: sub.organizationId, properties });
+      // Prefixo próprio: estes eventos podem ser criados numa base que já tem os eventos do resto do seed
+      const ev = (name: string, at: Date, properties: Record<string, unknown>) => evs.push({ id: id("evtimp"), softwareId: sub.softwareId, name, occurredAt: at, organizationId: sub.organizationId, properties });
       const task = (t: string, at: Date, by = "ai", extra: Record<string, unknown> = {}) => ev("task.completed", at, { task: t, by, ...extra });
       // Perfil do onboarding (a maioria das contas respondeu): faturação média mensal e horas por semana
       if (ix % 6 !== 1) {
@@ -360,7 +361,7 @@ async function seedImpact() {
           if (at.getTime() <= now) { if (isImo) { task("team.report", at); for (let c = 0; c < 4; c++) task("weekly.report", at); } else task("weekly.report", at); }
         }
       }
-      for (let c = 0; c < evs.length; c += 1000) await db.insert(schema.productEvents).values(evs.slice(c, c + 1000));
+      for (let c = 0; c < evs.length; c += 1000) await db.insert(schema.productEvents).values(evs.slice(c, c + 1000)).onConflictDoNothing();
     }
   }
 }
