@@ -161,7 +161,11 @@ export function previousMonthKey(key: string): string {
 
 export type TaskActor = "ai" | "assisted" | "human";
 export interface TaskEvent { task: string; by: TaskActor; humanSeconds?: number | null }
-export interface TaskRef { key: string; label: string; manualMinutes: number; remainingMinutes: number; validated: boolean }
+export interface TaskRef {
+  key: string; label: string; manualMinutes: number; remainingMinutes: number; validated: boolean;
+  /** true quando o tempo à mão foi medido automaticamente nas execuções feitas pela pessoa */
+  measured?: boolean; samples?: number;
+}
 
 /**
  * Minutos poupados numa execução de uma tarefa.
@@ -175,7 +179,7 @@ export function minutesSaved(ev: TaskEvent, ref: TaskRef | undefined): number {
 }
 
 export interface TaskRow {
-  key: string; label: string; known: boolean; validated: boolean;
+  key: string; label: string; known: boolean; validated: boolean; measured: boolean; samples: number;
   count: number; ai: number; assisted: number; human: number; minutesSaved: number; manualMinutes: number; remainingMinutes: number;
 }
 
@@ -186,7 +190,7 @@ export function summarizeTasks(events: TaskEvent[], catalog: TaskRef[]): TaskRow
     const ref = refs.get(ev.task);
     let row = byKey.get(ev.task);
     if (!row) {
-      row = { key: ev.task, label: ref?.label ?? ev.task, known: !!ref, validated: ref?.validated ?? false, count: 0, ai: 0, assisted: 0, human: 0,
+      row = { key: ev.task, label: ref?.label ?? ev.task, known: !!ref, validated: ref?.validated ?? false, measured: ref?.measured ?? false, samples: ref?.samples ?? 0, count: 0, ai: 0, assisted: 0, human: 0,
         minutesSaved: 0, manualMinutes: ref?.manualMinutes ?? 0, remainingMinutes: ref?.remainingMinutes ?? 0 };
       byKey.set(ev.task, row);
     }
@@ -195,6 +199,23 @@ export function summarizeTasks(events: TaskEvent[], catalog: TaskRef[]): TaskRow
     row.minutesSaved += minutesSaved(ev, ref);
   }
   return [...byKey.values()].sort((a, b) => b.minutesSaved - a.minutesSaved);
+}
+
+/**
+ * Tempo à mão medido automaticamente: mediana do tempo que as pessoas gastam quando fazem a tarefa sem a IA
+ * (execuções com by = "human" e human_seconds). Só com amostra suficiente; senão null e usa-se o catálogo.
+ */
+export function measuredManualMinutes(humanSeconds: number[], minSample: number): number | null {
+  const valid = humanSeconds.filter((x) => x > 0 && x < 8 * 3600);
+  if (valid.length < minSample) return null;
+  return median(valid)! / 60;
+}
+
+/** Valor da hora de uma conta a partir do onboarding: faturação média mensal ÷ horas de trabalho por mês. */
+export function hourValueFromProfile(avgMonthlyRevenueCents: number | null, weeklyHours: number | null, defaultWeeklyHours: number): number | null {
+  if (!avgMonthlyRevenueCents || avgMonthlyRevenueCents <= 0) return null;
+  const hours = (weeklyHours && weeklyHours > 0 ? weeklyHours : defaultWeeklyHours) * 52 / 12;
+  return hours > 0 ? Math.round(avgMonthlyRevenueCents / hours) : null;
 }
 
 /** Valor do tempo poupado, em cêntimos. */

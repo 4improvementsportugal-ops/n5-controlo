@@ -22,9 +22,14 @@ async function main() {
   if (process.argv.includes("--if-empty")) {
     if (process.env.DEMO_DATA !== "true") { console.log("DEMO_DATA não está ativo: sem dados de exemplo."); await sql.end(); return; }
     const [{ n }] = await sql<{ n: number }[]>`select count(*)::int as n from users`;
-    if (n > 0) { console.log("A base de dados já tem utilizadores: seed ignorado."); await sql.end(); return; }
+    if (n > 0) {
+      const [{ t }] = await sql<{ t: number }[]>`select count(*)::int as t from impact_tasks`;
+      if (t === 0) { await seedImpact(); console.log("Dados de exemplo do Impacto criados."); }
+      else console.log("A base de dados já tem utilizadores: seed ignorado.");
+      await sql.end(); return;
+    }
   }
-  await sql`truncate table impact_tasks, impact_settings, outbound_messages, engagement_rules, message_templates, audit_log, webhook_inbox, alerts, campaign_daily, provider_costs, releases, deployments, pull_requests,
+  await sql`truncate table account_profiles, impact_tasks, impact_settings, outbound_messages, engagement_rules, message_templates, audit_log, webhook_inbox, alerts, campaign_daily, provider_costs, releases, deployments, pull_requests,
     roadmap_items, feedback, usage_records, product_events, invoices, mrr_monthly, subscriptions, persons, organizations,
     api_keys, user_softwares, users, softwares restart identity cascade`;
 
@@ -126,87 +131,8 @@ async function main() {
     }
   }
 
-  // ---- Impacto: pressupostos, catálogo de tarefas e eventos de exemplo
-  await db.insert(schema.impactSettings).values([
-    { softwareId: "sw_clara", hourValueCents: 2000, fastResponseMinutes: 5, minSample: 30 },
-    { softwareId: "sw_imobiliario", hourValueCents: 2500, fastResponseMinutes: 5, minSample: 30 },
-  ]);
-  const basis = "Estimativa inicial da equipa: validar com cronometragem a 5 utilizadores";
-  const common: [string, string, number, number][] = [
-    ["lead.first_reply", "Primeira resposta a uma lead", 4, 0],
-    ["lead.qualification", "Qualificação da lead (orçamento, zona, prazo)", 8, 0.5],
-    ["followup.sent", "Follow-up a uma lead que não respondeu", 3, 0],
-    ["visit.scheduled", "Marcação de visita", 6, 0.5],
-    ["crm.update", "Registo da lead e do estado no CRM", 3, 0],
-    ["call.summary", "Resumo e notas de uma chamada", 6, 0.5],
-    ["call.classification", "Classificação da chamada e próximo passo", 2, 0],
-    ["contact.saved", "Gravar um contacto (por voz)", 2, 0.3],
-  ];
-  await db.insert(schema.impactTasks).values([
-    ...common.map(([key, label, m, r]) => ({ softwareId: "sw_clara", key, label, manualMinutes: m.toFixed(2), remainingMinutes: r.toFixed(2), basis, validated: key === "lead.first_reply" })),
-    { softwareId: "sw_clara", key: "weekly.report", label: "Relatório semanal de atividade", manualMinutes: "45.00", remainingMinutes: "2.00", basis },
-    ...common.map(([key, label, m, r]) => ({ softwareId: "sw_imobiliario", key, label, manualMinutes: m.toFixed(2), remainingMinutes: r.toFixed(2), basis })),
-    { softwareId: "sw_imobiliario", key: "lead.assignment", label: "Distribuir a lead pelo consultor certo", manualMinutes: "3.00", remainingMinutes: "0.00", basis },
-    { softwareId: "sw_imobiliario", key: "team.report", label: "Relatório semanal da equipa para o broker", manualMinutes: "90.00", remainingMinutes: "5.00", basis },
-  ]);
-  {
-    const live = (await db.select().from(schema.subscriptions)).filter((x) => x.status !== "canceled");
-    let li = 0;
-    for (const [ix, sub] of live.entries()) {
-      const isImo = sub.softwareId === "sw_imobiliario";
-      const aiOffAfterHours = ix % 5 === 0; // algumas contas desligam a IA fora de horas: dão o grupo de comparação
-      const lowUse = ix % 7 === 3; // contas que quase não usam: aparecem como risco
-      const evs: (typeof schema.productEvents.$inferInsert)[] = [];
-      const ev = (name: string, at: Date, properties: Record<string, unknown>) => evs.push({ id: id("evt"), softwareId: sub.softwareId, name, occurredAt: at, organizationId: sub.organizationId, properties });
-      const task = (t: string, at: Date, by = "ai", extra: Record<string, unknown> = {}) => ev("task.completed", at, { task: t, by, ...extra });
-      for (let d = 44; d >= 0; d--) {
-        const dayStart = new Date(now - d * day); dayStart.setUTCHours(0, 0, 0, 0);
-        const weekend = [0, 6].includes(dayStart.getUTCDay());
-        const nLeads = lowUse ? (rnd() < 0.15 ? 1 : 0) : Math.round((isImo ? 5 : 2) * (0.5 + rnd()));
-        for (let k = 0; k < nLeads; k++) {
-          const at = new Date(dayStart.getTime() + Math.floor(rnd() * 24 * 60) * 60000);
-          if (at.getTime() > now) continue;
-          const h = at.getUTCHours();
-          const afterHours = weekend || h < 9 || h >= 20;
-          const lead = `lead_ex${++li}`;
-          ev("lead.received", at, { lead, after_hours: afterHours, channel: "whatsapp" });
-          let seconds: number, by: "ai" | "human";
-          if (afterHours && aiOffAfterHours) { by = "human"; const next = new Date(at); if (h >= 9) next.setUTCDate(next.getUTCDate() + 1); next.setUTCHours(9, Math.floor(rnd() * 120), 0, 0); seconds = (next.getTime() - at.getTime()) / 1000; }
-          else if (!afterHours && rnd() < 0.15) { by = "human"; seconds = 300 + rnd() * 5400; }
-          else { by = "ai"; seconds = 8 + rnd() * 110; }
-          const respAt = new Date(at.getTime() + seconds * 1000);
-          if (respAt.getTime() > now) continue;
-          ev("lead.first_response", respAt, { lead, seconds: Math.round(seconds), by });
-          task("lead.first_reply", respAt, by);
-          if (by === "ai") {
-            if (rnd() < 0.8) task("lead.qualification", new Date(respAt.getTime() + 6e5));
-            task("crm.update", respAt);
-            for (let f = 0; f < Math.floor(rnd() * 3); f++) task("followup.sent", new Date(respAt.getTime() + (f + 1) * day));
-            if (isImo) task("lead.assignment", respAt);
-          }
-          const pVisit = seconds <= 300 ? 0.32 : seconds <= 3600 ? 0.22 : 0.13;
-          if (rnd() < pVisit) {
-            const vAt = new Date(respAt.getTime() + (1 + rnd() * 3) * day);
-            if (vAt.getTime() <= now) {
-              const vBy = by === "ai" && rnd() < 0.7 ? "ai" : "human";
-              ev("visit.scheduled", vAt, { lead, by: vBy });
-              task("visit.scheduled", vAt, vBy);
-              const dealAt = new Date(vAt.getTime() + (8 + rnd() * 20) * day);
-              if (rnd() < 0.2 && dealAt.getTime() <= now) ev("deal.closed", dealAt, { lead, commission_eur: Math.round((isImo ? 3000 : 2500) + rnd() * (isImo ? 6000 : 4500)) });
-            }
-          }
-        }
-        const calls = lowUse ? 0 : Math.round((isImo ? 10 : 1.5) * (0.5 + rnd()));
-        for (let c = 0; c < calls; c++) { const at = new Date(dayStart.getTime() + (9 + rnd() * 9) * 36e5); if (at.getTime() > now) continue; task("call.summary", at); task("call.classification", at); }
-        if (!lowUse && rnd() < (isImo ? 0.9 : 0.6)) { const at = new Date(dayStart.getTime() + (10 + rnd() * 8) * 36e5); if (at.getTime() <= now) task("contact.saved", at, "assisted", { human_seconds: 15 + Math.round(rnd() * 20) }); }
-        if (dayStart.getUTCDay() === 1 && !lowUse) {
-          const at = new Date(dayStart.getTime() + 8 * 36e5);
-          if (at.getTime() <= now) { if (isImo) { task("team.report", at); for (let c = 0; c < 4; c++) task("weekly.report", at); } else task("weekly.report", at); }
-        }
-      }
-      for (let c = 0; c < evs.length; c += 1000) await db.insert(schema.productEvents).values(evs.slice(c, c + 1000));
-    }
-  }
+  await seedImpact();
+
 
   // Última utilização a partir dos eventos; quem não tem eventos fica com a data de registo
   await sql`update persons set last_seen_at = (select max(occurred_at) from product_events e where e.person_id = persons.id)`;
@@ -339,6 +265,104 @@ async function main() {
 
   console.log("Dados de exemplo criados. Entra com socio@exemplo.n5 / exemplo-n5-2026! (ou colaborador@exemplo.n5).");
   await sql.end();
+}
+
+// Impacto: pressupostos, catálogo de tarefas, perfis de onboarding e eventos de exemplo.
+// Também corre com --if-empty quando a base já tem dados mas ainda não tem impacto (bases criadas antes do módulo).
+async function seedImpact() {
+  await db.insert(schema.impactSettings).values([
+    { softwareId: "sw_clara", hourValueCents: 2000, fastResponseMinutes: 5, minSample: 30 },
+    { softwareId: "sw_imobiliario", hourValueCents: 2500, fastResponseMinutes: 5, minSample: 30 },
+  ]);
+  const basis = "Estimativa inicial da equipa: validar com cronometragem a 5 utilizadores";
+  const common: [string, string, number, number][] = [
+    ["lead.first_reply", "Primeira resposta a uma lead", 4, 0],
+    ["lead.qualification", "Qualificação da lead (orçamento, zona, prazo)", 8, 0.5],
+    ["followup.sent", "Follow-up a uma lead que não respondeu", 3, 0],
+    ["visit.scheduled", "Marcação de visita", 6, 0.5],
+    ["crm.update", "Registo da lead e do estado no CRM", 3, 0],
+    ["call.summary", "Resumo e notas de uma chamada", 6, 0.5],
+    ["call.classification", "Classificação da chamada e próximo passo", 2, 0],
+    ["contact.saved", "Gravar um contacto (por voz)", 2, 0.3],
+  ];
+  await db.insert(schema.impactTasks).values([
+    ...common.map(([key, label, m, r]) => ({ softwareId: "sw_clara", key, label, manualMinutes: m.toFixed(2), remainingMinutes: r.toFixed(2), basis, validated: key === "lead.first_reply" })),
+    { softwareId: "sw_clara", key: "weekly.report", label: "Relatório semanal de atividade", manualMinutes: "45.00", remainingMinutes: "2.00", basis },
+    ...common.map(([key, label, m, r]) => ({ softwareId: "sw_imobiliario", key, label, manualMinutes: m.toFixed(2), remainingMinutes: r.toFixed(2), basis })),
+    { softwareId: "sw_imobiliario", key: "lead.assignment", label: "Distribuir a lead pelo consultor certo", manualMinutes: "3.00", remainingMinutes: "0.00", basis },
+    { softwareId: "sw_imobiliario", key: "team.report", label: "Relatório semanal da equipa para o broker", manualMinutes: "90.00", remainingMinutes: "5.00", basis },
+  ]);
+  {
+    const live = (await db.select().from(schema.subscriptions)).filter((x) => x.status !== "canceled");
+    let li = 0;
+    for (const [ix, sub] of live.entries()) {
+      const isImo = sub.softwareId === "sw_imobiliario";
+      const aiOffAfterHours = ix % 5 === 0; // algumas contas desligam a IA fora de horas: dão o grupo de comparação
+      const lowUse = ix % 7 === 3; // contas que quase não usam: aparecem como risco
+      const evs: (typeof schema.productEvents.$inferInsert)[] = [];
+      const ev = (name: string, at: Date, properties: Record<string, unknown>) => evs.push({ id: id("evt"), softwareId: sub.softwareId, name, occurredAt: at, organizationId: sub.organizationId, properties });
+      const task = (t: string, at: Date, by = "ai", extra: Record<string, unknown> = {}) => ev("task.completed", at, { task: t, by, ...extra });
+      // Perfil do onboarding (a maioria das contas respondeu): faturação média mensal e horas por semana
+      if (ix % 6 !== 1) {
+        const revenue = isImo ? 3500 + Math.round(rnd() * 3500) : 2000 + Math.round(rnd() * 4000);
+        const hours = 35 + Math.round(rnd() * 20);
+        ev("account.profile_updated", new Date(sub.startedAt.getTime() + day), { avg_monthly_revenue_eur: revenue, weekly_hours: hours });
+        await db.insert(schema.accountProfiles).values({ organizationId: sub.organizationId, softwareId: sub.softwareId, avgMonthlyRevenueCents: revenue * 100, weeklyHours: hours.toFixed(1) }).onConflictDoNothing();
+      }
+      for (let d = 44; d >= 0; d--) {
+        const dayStart = new Date(now - d * day); dayStart.setUTCHours(0, 0, 0, 0);
+        const weekend = [0, 6].includes(dayStart.getUTCDay());
+        const nLeads = lowUse ? (rnd() < 0.15 ? 1 : 0) : Math.round((isImo ? 5 : 2) * (0.5 + rnd()));
+        for (let k = 0; k < nLeads; k++) {
+          const at = new Date(dayStart.getTime() + Math.floor(rnd() * 24 * 60) * 60000);
+          if (at.getTime() > now) continue;
+          const h = at.getUTCHours();
+          const afterHours = weekend || h < 9 || h >= 20;
+          const lead = `lead_ex${++li}`;
+          ev("lead.received", at, { lead, after_hours: afterHours, channel: "whatsapp" });
+          let seconds: number, by: "ai" | "human";
+          if (afterHours && aiOffAfterHours) { by = "human"; const next = new Date(at); if (h >= 9) next.setUTCDate(next.getUTCDate() + 1); next.setUTCHours(9, Math.floor(rnd() * 120), 0, 0); seconds = (next.getTime() - at.getTime()) / 1000; }
+          else if (!afterHours && rnd() < 0.15) { by = "human"; seconds = 300 + rnd() * 5400; }
+          else { by = "ai"; seconds = 8 + rnd() * 110; }
+          const respAt = new Date(at.getTime() + seconds * 1000);
+          if (respAt.getTime() > now) continue;
+          ev("lead.first_response", respAt, { lead, seconds: Math.round(seconds), by });
+          if (by === "ai") task("lead.first_reply", respAt, "ai");
+          else {
+            // Feito à mão no software: o tempo gasto alimenta a medição automática do tempo à mão
+            task("lead.first_reply", respAt, "human", { human_seconds: Math.round(150 + rnd() * 300) });
+            task("lead.qualification", new Date(respAt.getTime() + 6e5), "human", { human_seconds: Math.round(360 + rnd() * 480) });
+            task("crm.update", respAt, "human", { human_seconds: Math.round(100 + rnd() * 200) });
+          }
+          if (by === "ai") {
+            if (rnd() < 0.8) task("lead.qualification", new Date(respAt.getTime() + 6e5));
+            task("crm.update", respAt);
+            for (let f = 0; f < Math.floor(rnd() * 3); f++) task("followup.sent", new Date(respAt.getTime() + (f + 1) * day));
+            if (isImo) task("lead.assignment", respAt);
+          }
+          const pVisit = seconds <= 300 ? 0.32 : seconds <= 3600 ? 0.22 : 0.13;
+          if (rnd() < pVisit) {
+            const vAt = new Date(respAt.getTime() + (1 + rnd() * 3) * day);
+            if (vAt.getTime() <= now) {
+              const vBy = by === "ai" && rnd() < 0.7 ? "ai" : "human";
+              ev("visit.scheduled", vAt, { lead, by: vBy });
+              task("visit.scheduled", vAt, vBy);
+              const dealAt = new Date(vAt.getTime() + (8 + rnd() * 20) * day);
+              if (rnd() < 0.2 && dealAt.getTime() <= now) ev("deal.closed", dealAt, { lead, commission_eur: Math.round((isImo ? 3000 : 2500) + rnd() * (isImo ? 6000 : 4500)) });
+            }
+          }
+        }
+        const calls = lowUse ? 0 : Math.round((isImo ? 10 : 1.5) * (0.5 + rnd()));
+        for (let c = 0; c < calls; c++) { const at = new Date(dayStart.getTime() + (9 + rnd() * 9) * 36e5); if (at.getTime() > now) continue; task("call.summary", at); task("call.classification", at); }
+        if (!lowUse && rnd() < (isImo ? 0.9 : 0.6)) { const at = new Date(dayStart.getTime() + (10 + rnd() * 8) * 36e5); if (at.getTime() <= now) task("contact.saved", at, "assisted", { human_seconds: 15 + Math.round(rnd() * 20) }); }
+        if (dayStart.getUTCDay() === 1 && !lowUse) {
+          const at = new Date(dayStart.getTime() + 8 * 36e5);
+          if (at.getTime() <= now) { if (isImo) { task("team.report", at); for (let c = 0; c < 4; c++) task("weekly.report", at); } else task("weekly.report", at); }
+        }
+      }
+      for (let c = 0; c < evs.length; c += 1000) await db.insert(schema.productEvents).values(evs.slice(c, c + 1000));
+    }
+  }
 }
 
 main().catch(async (e) => { console.error(e); await sql.end(); process.exit(1); });
