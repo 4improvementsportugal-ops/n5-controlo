@@ -69,3 +69,23 @@ O sistema calcula há quantos dias cada pessoa não usa o software a partir dos 
 **E-mail.** Amazon SES (ver `docs/deploy-aws.md`). Só sai entre as 09:00 e as 20:00 de Lisboa, de segunda a sábado; fora disso fica pendente para a hora seguinte. O botão passa por `/api/r/{id}` para registar o clique; o link de cancelamento abre uma confirmação.
 
 **Limites.** No máximo 1 e-mail a cada 3 dias e 3 comunicações por semana por pessoa. Cada regra dispara uma vez por período de inatividade. Quem cancelou não recebe nada desse canal, nem em envios manuais.
+
+## Impacto: eventos que provam o retorno
+
+O módulo Impacto só mostra o que os softwares registam. Cada software envia, em `POST /api/v1/events`:
+
+| Evento | Quando | `properties` |
+| --- | --- | --- |
+| `task.completed` | A IA fez, ajudou a fazer ou a pessoa fez uma tarefa do catálogo | `task` (código do catálogo, ex. `lead.first_reply`), `by` (`ai`, `assisted` ou `human`), `human_seconds` (opcional: tempo que a pessoa ainda gastou) |
+| `lead.received` | Chega uma lead | `lead` (id da lead no software), `after_hours` (`true` fora do horário do utilizador), `channel` |
+| `lead.first_response` | Primeira resposta à lead | `lead`, `seconds` (desde que chegou), `by` (`ai` ou `human`) |
+| `visit.scheduled` | Visita marcada | `lead`, `by` |
+| `deal.closed` | Negócio fechado com essa lead | `lead`, `commission_eur` (comissão do utilizador, sem IVA) |
+
+Regras:
+
+- O código `task` tem de existir no catálogo do software (Impacto › Pressupostos), com o tempo de referência à mão e o que fica para a pessoa. Códigos desconhecidos aparecem como "fora do catálogo" e não contam.
+- `after_hours` é decidido pelo software com o horário do utilizador (por omissão: fins de semana e antes das 09:00 ou depois das 20:00).
+- `deal.closed` pode chegar semanas depois; liga-se à lead pelo `lead`.
+
+Para mostrar ao utilizador ("este mês poupou 12 horas"), o software chama `GET /api/v1/impact?organization=org_...&software=sw_clara&period=30d` com uma chave com a permissão `impact:read`.

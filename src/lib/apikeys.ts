@@ -5,7 +5,7 @@ import { db, schema } from "@/db";
 
 export const SCOPES = [
   "events:write", "usage:write", "entitlements:read", "orgs:read",
-  "feedback:read", "feedback:write", "metrics:read", "alerts:write", "messages:read", "messages:write",
+  "feedback:read", "feedback:write", "metrics:read", "alerts:write", "messages:read", "messages:write", "impact:read",
 ] as const;
 export type Scope = (typeof SCOPES)[number];
 

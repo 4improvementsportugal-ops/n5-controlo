@@ -20,7 +20,7 @@ export const roadmapPhase = pgEnum("roadmap_phase", [
 export const roadmapOrigin = pgEnum("roadmap_origin", ["comunidade", "equipa", "cliente", "incidente"]);
 export const alertSeverity = pgEnum("alert_severity", ["critico", "aviso", "informacao"]);
 export const alertStatus = pgEnum("alert_status", ["novo", "visto", "resolvido"]);
-export const alertModule = pgEnum("alert_module", ["comunidades", "pipeline", "campanhas", "receita", "sistema"]);
+export const alertModule = pgEnum("alert_module", ["comunidades", "pipeline", "campanhas", "receita", "sistema", "impacto"]);
 
 // ---------- Equipa (quem usa o sistema de controlo) ----------
 export const users = pgTable("users", {
@@ -380,3 +380,28 @@ export const outboundMessages = pgTable("outbound_messages", {
   returnedAt: timestamp("returned_at", { withTimezone: true }), // voltou a usar até 7 dias depois do envio
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index("outbound_person_idx").on(t.personId, t.createdAt), index("outbound_rule_idx").on(t.ruleId)]);
+
+// ---------- Módulo 6: Impacto (retorno para o utilizador) ----------
+// Catálogo de tarefas que o software faz ou ajuda a fazer, com o tempo de referência de as fazer à mão.
+// "manualMinutes" = quanto demora sem o software; "remainingMinutes" = tempo humano que ainda fica quando a IA a faz.
+export const impactTasks = pgTable("impact_tasks", {
+  id: serial("id").primaryKey(),
+  softwareId: text("software_id").notNull().references(() => softwares.id, { onDelete: "cascade" }),
+  key: text("key").notNull(), // igual a properties.task do evento task.completed
+  label: text("label").notNull(),
+  manualMinutes: numeric("manual_minutes", { precision: 8, scale: 2 }).notNull(),
+  remainingMinutes: numeric("remaining_minutes", { precision: 8, scale: 2 }).notNull().default("0"),
+  basis: text("basis"), // como se chegou ao tempo de referência (cronometragem, entrevistas, estimativa)
+  validated: boolean("validated").notNull().default(false),
+  active: boolean("active").notNull().default(true),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [uniqueIndex("impact_tasks_sw_key").on(t.softwareId, t.key)]);
+
+// Pressupostos de valor por software
+export const impactSettings = pgTable("impact_settings", {
+  softwareId: text("software_id").primaryKey().references(() => softwares.id, { onDelete: "cascade" }),
+  hourValueCents: integer("hour_value_cents").notNull().default(2000), // valor de uma hora do utilizador
+  fastResponseMinutes: integer("fast_response_minutes").notNull().default(5), // limiar de resposta rápida
+  minSample: integer("min_sample").notNull().default(30), // leads mínimas por grupo para comparar conversões
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});

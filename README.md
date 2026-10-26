@@ -14,6 +14,7 @@ A especificação completa está no documento "Especificação do Sistema de Con
 | Campanhas e funil | Totais, funil, campanhas com CPM, CTR, CPC, CPL, registos, pagantes e CAC | Meta Insights (a cada 6 h) ou CSV do Gestor de Anúncios |
 | Utilização e receita | MRR mês a mês (novo, expansão, contração, churn), contas com margem e saúde, utilização (ativos, tempo na app, funcionalidades), trials | Stripe (webhooks), eventos e consumo dos softwares |
 | Reativação | Há quanto tempo cada utilizador não usa (faixas por software e lista de pessoas), regras automáticas por dias sem usar, modelos de comunicação na app e por e-mail (lembrete, dica, novidade, oferta, feedback, fim de trial, reativação), envios e resultados (vistas, cliques, quem voltou) | Eventos dos softwares, Amazon SES, API `GET /api/v1/messages` |
+| Impacto | Prova do retorno para o utilizador: tempo poupado por tarefa e o seu valor, retorno por cada € pago, leads atendidas fora de horas pela IA, tempo de primeira resposta, conversão rápida vs lenta e negócio protegido (estimado), por conta, com os pressupostos editáveis | Eventos `task.completed`, `lead.received`, `lead.first_response`, `visit.scheduled`, `deal.closed`; API `GET /api/v1/impact` |
 | Alertas | Centro de alertas com gravidade, dono, silenciar e resolver; críticos e avisos vão para o Slack interno | Regras a cada 15 min, webhooks, API `POST /api/v1/alerts` |
 | Definições | Softwares, utilizadores e funções, chaves de API, estado das ligações | |
 
@@ -81,6 +82,7 @@ Autenticação: `Authorization: Bearer <chave>`. As chaves criam-se em Definiç�
 | `GET /api/v1/messages?person=` | `messages:read` | Mensagens na app por mostrar ao utilizador |
 | `POST /api/v1/messages/{id}/events` | `messages:write` | Mensagem vista, clicada ou dispensada |
 | `POST /api/v1/persons/{id}/preferences` | `messages:write` | Cancelar e-mails ou mensagens na app |
+| `GET /api/v1/impact?organization=&software=&period=` | `impact:read` | Resumo do impacto de uma conta, para mostrar ao utilizador |
 
 Os envios são idempotentes pelo `id`: repetir um evento ou um registo não duplica. Eventos fora da lista padrão têm de estar declarados nos eventos chave do software.
 
@@ -110,5 +112,6 @@ src/lib/metrics.ts    cálculos puros, testados
 src/lib/core.ts       eventos, consumo, direitos, feedback, regras do roadmap
 src/lib/alerts.ts     regras de alerta
 src/lib/engagement*.ts inatividade, regras e envio de comunicações
+src/lib/impact.ts     agregação do módulo Impacto (cálculos em metrics.ts)
 src/db/schema.ts      modelo de dados (Drizzle, Postgres)
 ```

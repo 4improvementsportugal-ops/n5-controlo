@@ -15,6 +15,13 @@
       "when": 1792865584077,
       "tag": "0001_reativacao",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793032586905,
+      "tag": "0002_impacto",
+      "breakpoints": true
     }
   ]
 }

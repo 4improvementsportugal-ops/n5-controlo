@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { SESSION_COOKIE, verifySession, type SessionPayload, type TeamRole } from "./session";
 
-export type Module = "painel" | "comunidades" | "pipeline" | "campanhas" | "receita" | "reativacao" | "custos" | "alertas" | "definicoes";
+export type Module = "painel" | "comunidades" | "pipeline" | "campanhas" | "receita" | "reativacao" | "impacto" | "custos" | "alertas" | "definicoes";
 
 // Regras de acesso da especificação: sócios e direção de operações veem tudo;
 // colaboradores veem Comunidades e Pipeline dos softwares atribuídos (sem o ecrã de custos).
