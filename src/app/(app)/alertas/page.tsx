@@ -5,7 +5,7 @@ import { fmtDateTime, LABELS } from "@/lib/format";
 import { Empty, PageHeader, Pill, Tabs } from "@/components/ui";
 import { alertAction, testAlert } from "./actions";
 
-const MODULE_LABEL: Record<string, string> = { comunidades: "Comunidades", pipeline: "Pipeline", campanhas: "Campanhas", receita: "Receita", sistema: "Sistema" };
+const MODULE_LABEL: Record<string, string> = { comunidades: "Comunidades", pipeline: "Pipeline", campanhas: "Campanhas", receita: "Receita", sistema: "Sistema", impacto: "Impacto" };
 
 export default async function Alertas({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   await requireUser("alertas");

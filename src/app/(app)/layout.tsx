@@ -18,6 +18,7 @@ const NAV: { href: string; label: string; module: Module }[] = [
   { href: "/campanhas", label: "Campanhas e funil", module: "campanhas" },
   { href: "/receita", label: "Utilização e receita", module: "receita" },
   { href: "/reativacao", label: "Reativação", module: "reativacao" },
+  { href: "/impacto", label: "Impacto", module: "impacto" },
   { href: "/alertas", label: "Alertas", module: "alertas" },
   { href: "/definicoes", label: "Definições", module: "definicoes" },
 ];

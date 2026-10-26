@@ -154,3 +154,157 @@ export function previousMonthKey(key: string): string {
   const d = new Date(Date.UTC(y, m - 2, 1));
   return monthKey(d);
 }
+
+// ---------------- Módulo Impacto ----------------
+// Mede o retorno que cada software dá ao utilizador: tempo poupado, leads atendidas a tempo e negócio que daí vem.
+// Regra de honestidade: separar sempre o que é MEDIDO (eventos dos softwares) do que é ESTIMADO (comparações).
+
+export type TaskActor = "ai" | "assisted" | "human";
+export interface TaskEvent { task: string; by: TaskActor; humanSeconds?: number | null }
+export interface TaskRef { key: string; label: string; manualMinutes: number; remainingMinutes: number; validated: boolean }
+
+/**
+ * Minutos poupados numa execução de uma tarefa.
+ * IA ou assistido: tempo de referência à mão − tempo humano que ainda ficou (o enviado pelo software, ou o de referência).
+ * Feita à mão no software: 0 (o software não poupou tempo nessa execução).
+ */
+export function minutesSaved(ev: TaskEvent, ref: TaskRef | undefined): number {
+  if (!ref || ev.by === "human") return 0;
+  const remaining = ev.humanSeconds != null && ev.humanSeconds >= 0 ? ev.humanSeconds / 60 : ref.remainingMinutes;
+  return Math.max(0, ref.manualMinutes - remaining);
+}
+
+export interface TaskRow {
+  key: string; label: string; known: boolean; validated: boolean;
+  count: number; ai: number; assisted: number; human: number; minutesSaved: number; manualMinutes: number; remainingMinutes: number;
+}
+
+export function summarizeTasks(events: TaskEvent[], catalog: TaskRef[]): TaskRow[] {
+  const byKey = new Map<string, TaskRow>();
+  const refs = new Map(catalog.map((c) => [c.key, c]));
+  for (const ev of events) {
+    const ref = refs.get(ev.task);
+    let row = byKey.get(ev.task);
+    if (!row) {
+      row = { key: ev.task, label: ref?.label ?? ev.task, known: !!ref, validated: ref?.validated ?? false, count: 0, ai: 0, assisted: 0, human: 0,
+        minutesSaved: 0, manualMinutes: ref?.manualMinutes ?? 0, remainingMinutes: ref?.remainingMinutes ?? 0 };
+      byKey.set(ev.task, row);
+    }
+    row.count++;
+    row[ev.by]++;
+    row.minutesSaved += minutesSaved(ev, ref);
+  }
+  return [...byKey.values()].sort((a, b) => b.minutesSaved - a.minutesSaved);
+}
+
+/** Valor do tempo poupado, em cêntimos. */
+export function timeValueCents(minutes: number, hourValueCents: number): number {
+  return Math.round((minutes / 60) * hourValueCents);
+}
+
+export interface LeadRecord {
+  lead: string;
+  receivedAt: Date;
+  afterHours: boolean; // fora do horário do utilizador (o software decide e envia em lead.received)
+  firstResponseSeconds: number | null;
+  respondedBy: "ai" | "human" | null;
+  visit: boolean;
+  visitByAi: boolean;
+  deal: boolean;
+  commissionCents: number;
+}
+
+export const RESPONSE_BUCKETS = [
+  { key: "1m", label: "Até 1 min", max: 60 },
+  { key: "5m", label: "1 a 5 min", max: 300 },
+  { key: "30m", label: "5 a 30 min", max: 1800 },
+  { key: "1h", label: "30 a 60 min", max: 3600 },
+  { key: "24h", label: "1 a 24 h", max: 86400 },
+  { key: "mais", label: "Mais de 24 h", max: Infinity },
+] as const;
+
+export function responseBucket(seconds: number | null): string {
+  if (seconds == null) return "sem";
+  return RESPONSE_BUCKETS.find((b) => seconds <= b.max)!.key;
+}
+
+export function median(values: number[]): number | null {
+  if (!values.length) return null;
+  const s = [...values].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+const rate = (num: number, den: number) => (den > 0 ? num / den : null);
+
+export interface LeadSummary {
+  total: number; answered: number; byAi: number;
+  medianSeconds: number | null; medianAiSeconds: number | null; medianHumanSeconds: number | null;
+  fastShare: number | null;
+  afterHours: number; afterHoursByAi: number; afterHoursByAiVisits: number; afterHoursByAiDeals: number; afterHoursByAiCommissionCents: number;
+  visits: number; visitsByAi: number; deals: number; dealsFirstByAi: number; commissionFirstByAiCents: number; commissionCents: number;
+  buckets: { key: string; label: string; leads: number; visits: number; visitRate: number | null }[];
+  fast: { n: number; visitRate: number | null; dealRate: number | null };
+  slow: { n: number; visitRate: number | null; dealRate: number | null };
+  /** Diferença medida de conversão entre leads respondidas depressa e devagar; null sem amostra suficiente. */
+  upliftVisit: number | null; upliftDeal: number | null;
+  /** Estimativas: visitas e negócios que se teriam perdido sem resposta imediata fora de horas. */
+  protectedVisits: number | null; protectedDeals: number | null; protectedCommissionCents: number | null;
+}
+
+/**
+ * Resume as leads de um período.
+ * Rápido = primeira resposta até `fastMinutes`; lento = mais de 60 min (o que acontece fora de horas sem IA).
+ * A estimativa de negócio protegido só aparece com pelo menos `minSample` leads em cada grupo.
+ */
+export function leadSummary(leads: LeadRecord[], fastMinutes = 5, minSample = 30): LeadSummary {
+  const answered = leads.filter((l) => l.firstResponseSeconds != null);
+  const ai = answered.filter((l) => l.respondedBy === "ai");
+  const human = answered.filter((l) => l.respondedBy === "human");
+  const fastS = fastMinutes * 60;
+  const fast = answered.filter((l) => l.firstResponseSeconds! <= fastS);
+  const slow = answered.filter((l) => l.firstResponseSeconds! > 3600);
+  const ahAi = leads.filter((l) => l.afterHours && l.respondedBy === "ai" && l.firstResponseSeconds! <= fastS);
+  const deals = leads.filter((l) => l.deal);
+  const vr = (g: LeadRecord[]) => rate(g.filter((l) => l.visit).length, g.length);
+  const dr = (g: LeadRecord[]) => rate(g.filter((l) => l.deal).length, g.length);
+  const enough = fast.length >= minSample && slow.length >= minSample;
+  const upliftVisit = enough ? Math.max(0, vr(fast)! - vr(slow)!) : null;
+  const upliftDeal = enough ? Math.max(0, dr(fast)! - dr(slow)!) : null;
+  const avgCommission = deals.length ? deals.reduce((a, l) => a + l.commissionCents, 0) / deals.length : 0;
+  const protectedDeals = upliftDeal != null ? ahAi.length * upliftDeal : null;
+  const buckets = [...RESPONSE_BUCKETS.map((b) => ({ key: b.key, label: b.label })), { key: "sem", label: "Sem resposta" }].map((b) => {
+    const g = leads.filter((l) => responseBucket(l.firstResponseSeconds) === b.key);
+    return { ...b, leads: g.length, visits: g.filter((l) => l.visit).length, visitRate: vr(g) };
+  });
+  return {
+    total: leads.length, answered: answered.length, byAi: ai.length,
+    medianSeconds: median(answered.map((l) => l.firstResponseSeconds!)),
+    medianAiSeconds: median(ai.map((l) => l.firstResponseSeconds!)),
+    medianHumanSeconds: median(human.map((l) => l.firstResponseSeconds!)),
+    fastShare: rate(fast.length, leads.length),
+    afterHours: leads.filter((l) => l.afterHours).length,
+    afterHoursByAi: ahAi.length,
+    afterHoursByAiVisits: ahAi.filter((l) => l.visit).length,
+    afterHoursByAiDeals: ahAi.filter((l) => l.deal).length,
+    afterHoursByAiCommissionCents: ahAi.reduce((a, l) => a + (l.deal ? l.commissionCents : 0), 0),
+    visits: leads.filter((l) => l.visit).length,
+    visitsByAi: leads.filter((l) => l.visitByAi).length,
+    deals: deals.length,
+    dealsFirstByAi: deals.filter((l) => l.respondedBy === "ai").length,
+    commissionFirstByAiCents: deals.filter((l) => l.respondedBy === "ai").reduce((a, l) => a + l.commissionCents, 0),
+    commissionCents: deals.reduce((a, l) => a + l.commissionCents, 0),
+    buckets,
+    fast: { n: fast.length, visitRate: vr(fast), dealRate: dr(fast) },
+    slow: { n: slow.length, visitRate: vr(slow), dealRate: dr(slow) },
+    upliftVisit, upliftDeal,
+    protectedVisits: upliftVisit != null ? ahAi.length * upliftVisit : null,
+    protectedDeals,
+    protectedCommissionCents: protectedDeals != null ? Math.round(protectedDeals * avgCommission) : null,
+  };
+}
+
+/** Retorno por cada euro pago: valor gerado ÷ custo. null se não houve custo no período. */
+export function returnMultiple(valueCents: number, costCents: number): number | null {
+  return costCents > 0 ? valueCents / costCents : null;
+}

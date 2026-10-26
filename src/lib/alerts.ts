@@ -3,9 +3,10 @@ import { and, eq, ne, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { businessHoursBetween, monthKey, previousMonthKey } from "./metrics";
 import { postSlackMessage } from "./slack";
+import { loadImpact } from "./impact";
 
 type Severity = "critico" | "aviso" | "informacao";
-type Module = "comunidades" | "pipeline" | "campanhas" | "receita" | "sistema";
+type Module = "comunidades" | "pipeline" | "campanhas" | "receita" | "sistema" | "impacto";
 
 export interface AlertInput {
   module: Module;
@@ -192,6 +193,17 @@ export async function evaluateAlerts(now = new Date()): Promise<{ checked: numbe
     if (cur !== undefined && prev !== undefined && cur < prev) {
       await bump({ module: "receita", softwareId: sw.id, severity: "aviso", title: `MRR a cair: ${sw.name}`,
         detail: `${(cur / 100).toFixed(2)} € contra ${(prev / 100).toFixed(2)} € no mês anterior`, dedupeKey: `mrr-cair:${sw.id}:${thisMonth}` });
+    }
+  }
+
+  // --- Impacto: conta pagante cujo tempo poupado vale menos do que a mensalidade (risco de cancelar)
+  const last30 = { from: new Date(now.getTime() - 30 * 864e5), to: now, prevFrom: new Date(now.getTime() - 60 * 864e5), prevTo: new Date(now.getTime() - 30 * 864e5), key: "30d" as const };
+  const impact = await loadImpact(softwares.map((s) => s.id), last30);
+  for (const a of impact.accounts) {
+    if (a.costCents > 0 && a.roiTime !== null && a.roiTime < 1) {
+      await bump({ module: "impacto", softwareId: a.softwareId, severity: "aviso", title: `Retorno abaixo da mensalidade: ${a.orgName}`,
+        detail: `Tempo poupado nos últimos 30 dias vale ${(a.timeValueCents / 100).toFixed(2)} € para ${(a.costCents / 100).toFixed(2)} € pagos. Rever a utilização com o cliente.`,
+        dedupeKey: `impacto-baixo:${a.orgId}:${a.softwareId}:${thisMonth}` });
     }
   }
 

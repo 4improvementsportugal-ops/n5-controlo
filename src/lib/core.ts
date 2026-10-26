@@ -29,6 +29,8 @@ export type EventInput = z.infer<typeof eventSchema>;
 const STANDARD_EVENTS = new Set([
   "session.started", "session.heartbeat", "feature.used", "account.signed_up", "account.activated",
   "member.invited", "member.joined", "integration.connected", "integration.failed",
+  // Módulo Impacto
+  "task.completed", "lead.received", "lead.first_response", "visit.scheduled", "deal.closed",
 ]);
 
 export interface BatchResult { accepted: number; duplicates: number; rejected: { id?: string; error: string }[] }

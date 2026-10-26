@@ -26,6 +26,7 @@ PAGES = [
     "pipeline?vista=custos", "pipeline?vista=novo",
     "campanhas", "receita", "receita?vista=contas", "receita?vista=utilizacao", "receita?vista=trials",
     "reativacao", "reativacao?vista=regras", "reativacao?vista=modelos", "reativacao?vista=envios",
+    "impacto", "impacto?vista=tarefas", "impacto?vista=leads", "impacto?vista=contas", "impacto?vista=pressupostos",
     "alertas", "alertas?estado=resolvidos", "alertas?estado=todos",
     "definicoes", "definicoes?vista=utilizadores", "definicoes?vista=chaves", "definicoes?vista=ligacoes",
 ]
