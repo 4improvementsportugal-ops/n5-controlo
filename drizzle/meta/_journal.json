@@ -57,6 +57,13 @@
       "when": 1793420202749,
       "tag": "0007_monitorizacao_meta",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793421119515,
+      "tag": "0008_compras_stripe",
+      "breakpoints": true
     }
   ]
 }

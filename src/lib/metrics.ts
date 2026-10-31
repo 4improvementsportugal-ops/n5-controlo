@@ -513,3 +513,34 @@ export function siteConclusions(input: {
   const weight: Record<ConclusionState, number> = { mau: 0, aviso: 1, espera: 2, ok: 3 };
   return out.sort((a, b) => weight[a.state] - weight[b.state]);
 }
+
+/** Referência de um anúncio para juntar o utm_content da inscrição ao nome do anúncio na Meta:
+ *  «CLA · N3 · LISTA-FSBO · /angariacao/» e «cla_n3_lista-fsbo» dão os dois «cla_n3_lista_fsbo». */
+export type AdCreativeLinks = {
+  url_tags?: string;
+  object_story_spec?: { link_data?: { link?: string }; video_data?: { call_to_action?: { value?: { link?: string } } } };
+  asset_feed_spec?: { link_urls?: { website_url?: string; url_tags?: string }[] };
+};
+
+/** O utm_content da ligação de um anúncio (parâmetros de URL, ligação do criativo ou do conjunto de recursos), ou null. */
+export function utmContentOf(creative: AdCreativeLinks | null | undefined): string | null {
+  if (!creative) return null;
+  const candidates = [
+    creative.url_tags,
+    creative.object_story_spec?.link_data?.link,
+    creative.object_story_spec?.video_data?.call_to_action?.value?.link,
+    ...(creative.asset_feed_spec?.link_urls ?? []).flatMap((l) => [l.url_tags, l.website_url]),
+  ];
+  for (const c of candidates) {
+    if (!c) continue;
+    const query = c.includes("?") ? c.slice(c.indexOf("?") + 1) : c;
+    const value = new URLSearchParams(query.split("#")[0]).get("utm_content");
+    if (value && !value.includes("{{")) return value;
+  }
+  return null;
+}
+
+export function adRef(value: string | null | undefined): string {
+  const parts = String(value ?? "").split("·").map((p) => p.trim()).filter((p) => p && !p.startsWith("/"));
+  return parts.join("_").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}

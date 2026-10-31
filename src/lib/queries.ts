@@ -368,13 +368,20 @@ export async function campaignMonitor(campaignId: string, softwareIds: string[])
     lastSpend: sql<string | null>`max(case when ${schema.campaignDaily.spendCents} > 0 then ${schema.campaignDaily.date} end)::text`,
   }).from(schema.campaignDaily).where(where).groupBy(schema.campaignDaily.adName).orderBy(desc(sql`sum(${schema.campaignDaily.spendCents})`));
   if (!ads.length) return null;
-  const [days, [abo], adInfo, [campaignTotals]] = await Promise.all([
+  const sw = ads[0].sw;
+  const [days, [abo], adInfo, [campaignTotals], stripeByAd] = await Promise.all([
     db.select({ date: sql<string>`${schema.campaignDaily.date}::text`, ...sums })
       .from(schema.campaignDaily).where(where).groupBy(schema.campaignDaily.date).orderBy(schema.campaignDaily.date),
     db.select().from(schema.metaAboCampaigns).where(eq(schema.metaAboCampaigns.campaignId, campaignId)),
     // Estado e formato de todos os anúncios da campanha, também os que ainda não gastaram
     db.select().from(schema.metaAds).where(and(eq(schema.metaAds.campaignId, campaignId), inArray(schema.metaAds.softwareId, softwareIds))),
     db.select().from(schema.metaCampaignTotals).where(eq(schema.metaCampaignTotals.campaignId, campaignId)),
+    // Compras na Stripe desde o primeiro dia da campanha, pelo anúncio da inscrição de cada pessoa (null: sem inscrição ligada)
+    db.select({ adRef: schema.signupAttributions.adRef, n: sql<number>`count(*)::int` })
+      .from(schema.stripePurchases)
+      .leftJoin(schema.signupAttributions, and(eq(schema.signupAttributions.emailHash, schema.stripePurchases.emailHash), eq(schema.signupAttributions.softwareId, schema.stripePurchases.softwareId)))
+      .where(and(eq(schema.stripePurchases.softwareId, sw), sql`${schema.stripePurchases.paidAt} >= (select min(${schema.campaignDaily.date}) from ${schema.campaignDaily} where ${schema.campaignDaily.campaignId} = ${campaignId})`))
+      .groupBy(schema.signupAttributions.adRef),
   ]);
   const totals = ads.reduce((a, r) => ({
     spendCents: a.spendCents + r.spendCents, impressions: a.impressions + r.impressions, clicks: a.clicks + r.clicks,
@@ -383,6 +390,8 @@ export async function campaignMonitor(campaignId: string, softwareIds: string[])
   return {
     ads, days, totals, adInfo, reach: campaignTotals?.reach ?? null, frequency: campaignTotals?.frequency ? Number(campaignTotals.frequency) : null,
     dailyBudgetCents: abo?.dailyBudgetCents ?? null, first: days[0]?.date ?? null, last: days[days.length - 1]?.date ?? null,
-    softwareId: ads[0]?.sw ?? null,
+    softwareId: sw ?? null,
+    stripeByAd: new Map(stripeByAd.filter((r) => r.adRef).map((r) => [r.adRef!, r.n])),
+    stripeTotal: stripeByAd.reduce((s, r) => s + r.n, 0),
   };
 }

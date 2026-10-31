@@ -285,8 +285,31 @@ export const metaAds = pgTable("meta_ads", {
   adsetName: text("adset_name"),
   status: text("status"), // effective_status da Meta: ACTIVE, PAUSED, PENDING_REVIEW, DISAPPROVED, ...
   format: text("format"), // imagem | video
+  adRef: text("ad_ref"), // utm_content da ligação do anúncio, normalizado (adRef); junta as compras da Stripe ao anúncio
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index("meta_ads_campaign_idx").on(t.campaignId)]);
+
+// Compras confirmadas pela Stripe nos Payment Links ligados (pré-reservas), com o email cifrado para as juntar
+// à inscrição e ao anúncio de onde a pessoa veio.
+export const stripePurchases = pgTable("stripe_purchases", {
+  sessionId: text("session_id").primaryKey(),
+  softwareId: text("software_id").notNull().references(() => softwares.id),
+  emailHash: text("email_hash"),
+  amountCents: integer("amount_cents").notNull().default(0),
+  currency: text("currency").notNull().default("eur"),
+  paymentLink: text("payment_link"),
+  paidAt: timestamp("paid_at", { withTimezone: true }).notNull(),
+}, (t) => [index("stripe_purchases_sw_idx").on(t.softwareId, t.paidAt)]).enableRLS();
+
+// De que página e de que anúncio veio cada inscrição (a primeira de cada pessoa), para saber que anúncios trazem compras.
+// Só o email cifrado, a página e o anúncio (utm_content normalizado); nada vai para fora.
+export const signupAttributions = pgTable("signup_attributions", {
+  emailHash: text("email_hash").notNull(),
+  softwareId: text("software_id").notNull().references(() => softwares.id),
+  page: text("page"),
+  adRef: text("ad_ref"),
+  signedUpAt: timestamp("signed_up_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [primaryKey({ columns: [t.emailHash, t.softwareId] })]).enableRLS();
 
 // Totais de cada campanha desde o início (o alcance e a frequência não se somam por dia).
 export const metaCampaignTotals = pgTable("meta_campaign_totals", {

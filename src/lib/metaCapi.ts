@@ -5,6 +5,7 @@ import {
   consentExpiry, emailHash, isPaidCheckout, paymentLinks, purchaseEvent,
   type MetaEvent, type StripeCheckoutSession,
 } from "@/lib/conversions";
+import { adRef } from "@/lib/metrics";
 
 // API de Conversões da Meta: envio dos eventos e consentimentos guardados.
 // META_CAPI_TOKEN: token gerado no Gestor de Eventos (conjunto de dados › Definições › API de Conversões).
@@ -50,16 +51,29 @@ export async function saveConsent(input: {
     .onConflictDoUpdate({ target: schema.metaConsents.emailHash, set: values });
 }
 
-/** Chamado pelo webhook da Stripe. Devolve o que fez, para ficar no registo do webhook. */
+/** De que página e anúncio veio a inscrição (a primeira de cada pessoa). Não sai do Controlo. */
+export async function saveAttribution(input: { email: string; softwareId: string; page: string | null; ad: string | null }): Promise<void> {
+  const hash = emailHash(input.email);
+  if (!hash) return;
+  await db.insert(schema.signupAttributions).values({ emailHash: hash, softwareId: input.softwareId, page: input.page, adRef: input.ad ? adRef(input.ad) || null : null })
+    .onConflictDoNothing();
+}
+
+/** Chamado pelo webhook da Stripe. Guarda a compra e, com consentimento de marketing, envia-a à Meta.
+ *  Devolve o que fez, para ficar no registo do webhook. */
 export async function purchaseFromCheckout(eventType: string, session: StripeCheckoutSession, now = new Date()): Promise<string> {
   if (!isPaidCheckout(eventType, session)) return "por pagar";
   const softwareId = session.payment_link ? paymentLinks(process.env.META_CAPI_PAYMENT_LINKS).get(session.payment_link) : undefined;
   if (!softwareId) return "não é uma pré-reserva ligada à Meta";
   const hash = emailHash(session.customer_details?.email);
-  if (!hash) return "sem email";
+  await db.insert(schema.stripePurchases).values({
+    sessionId: session.id, softwareId, emailHash: hash, amountCents: session.amount_total ?? 0,
+    currency: String(session.currency ?? "eur"), paymentLink: session.payment_link ?? null, paidAt: now,
+  }).onConflictDoNothing();
+  if (!hash) return "compra guardada, sem email";
   const [consent] = await db.select().from(schema.metaConsents)
     .where(and(eq(schema.metaConsents.emailHash, hash), eq(schema.metaConsents.softwareId, softwareId)));
-  if (!consent || consent.expiresAt < now) return "sem consentimento de marketing";
+  if (!consent || consent.expiresAt < now) return "compra guardada; sem consentimento de marketing, não vai para a Meta";
   if (!capiConfigured()) return "META_CAPI_TOKEN não configurado";
   const [software] = await db.select().from(schema.softwares).where(eq(schema.softwares.id, softwareId));
   await sendToMeta([purchaseEvent({ session, consent, contentName: software?.name ?? softwareId, now })]);

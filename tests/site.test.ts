@@ -38,3 +38,26 @@ describe("Monitorização do site", () => {
     expect(muito[0]).toMatchObject({ topic: "Primeira impressão", state: "mau" });
   });
 });
+
+import { adRef, utmContentOf } from "@/lib/metrics";
+describe("Compras da Stripe por anúncio", () => {
+  it("junta o utm_content da inscrição ao nome do anúncio", () => {
+    expect(adRef("CLA · N3 · LISTA-FSBO · /angariacao/")).toBe("cla_n3_lista_fsbo");
+    expect(adRef("cla_n3_lista-fsbo")).toBe("cla_n3_lista_fsbo");
+    expect(adRef("CLA · N3 · DIA · VÍDEO")).toBe("cla_n3_dia_video");
+    expect(adRef("CLA · N1 · POSICIONAMENTO · /")).toBe("cla_n1_posicionamento");
+    expect(adRef(null)).toBe("");
+  });
+
+  it("lê o utm_content da ligação do anúncio na Meta", () => {
+    const link = "https://clara.numerocinco.pt/leads/?utm_source=meta&utm_medium=paid&utm_campaign=lancamento&utm_content=cla_n2_leads";
+    expect(utmContentOf({ object_story_spec: { link_data: { link } } })).toBe("cla_n2_leads");
+    expect(utmContentOf({ object_story_spec: { video_data: { call_to_action: { value: { link } } } } })).toBe("cla_n2_leads");
+    expect(utmContentOf({ url_tags: "utm_source=meta&utm_content=cla_n4_copiloto" })).toBe("cla_n4_copiloto");
+    expect(utmContentOf({ asset_feed_spec: { link_urls: [{ website_url: "https://clara.numerocinco.pt/crm/?utm_content=cla_n4_copiloto" }] } })).toBe("cla_n4_copiloto");
+    // parâmetros dinâmicos da Meta e ligações sem utm_content ficam de fora (conta o nome do anúncio)
+    expect(utmContentOf({ url_tags: "utm_content={{ad.name}}" })).toBeNull();
+    expect(utmContentOf({ object_story_spec: { link_data: { link: "https://clara.numerocinco.pt/" } } })).toBeNull();
+    expect(utmContentOf(null)).toBeNull();
+  });
+});

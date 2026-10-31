@@ -3,7 +3,7 @@ import { z } from "zod";
 import { db, schema } from "@/db";
 import { authenticate, errorResponse, ApiError } from "@/lib/apikeys";
 import { leadEvent } from "@/lib/conversions";
-import { capiConfigured, saveConsent, sendToMeta } from "@/lib/metaCapi";
+import { capiConfigured, saveAttribution, saveConsent, sendToMeta } from "@/lib/metaCapi";
 
 const leadSchema = z.object({
   event: z.literal("Lead"),
@@ -16,12 +16,14 @@ const leadSchema = z.object({
   client_ip: z.string().max(64).optional(),
   user_agent: z.string().max(1000).optional(),
   source_url: z.string().url().max(2000),
-  consent: z.literal(true, { message: "Só se envia à Meta com o consentimento de marketing da pessoa." }),
+  ad: z.string().max(150).optional(), // utm_content do anúncio de onde veio
+  consent: z.boolean(),
 });
 
-// POST /api/v1/conversions — inscrição num site N5 para a API de Conversões da Meta.
-// Só para quem aceitou os cookies de marketing. Guarda o consentimento (90 dias), para a compra que a Stripe
-// confirmar mais tarde, e envia o Lead com o mesmo event_id que o píxel usou no navegador.
+// POST /api/v1/conversions — inscrição num site N5.
+// Sempre: guarda de que página e anúncio veio (email cifrado), para juntar as compras da Stripe aos anúncios.
+// Só com os cookies de marketing aceites (consent: true): guarda o consentimento (90 dias), para a compra que a Stripe
+// confirmar mais tarde, e envia o Lead à Meta com o mesmo event_id que o píxel usou no navegador.
 export async function POST(req: Request) {
   try {
     const caller = await authenticate(req, "events:write");
@@ -29,6 +31,8 @@ export async function POST(req: Request) {
     const p = leadSchema.safeParse(await req.json().catch(() => null));
     if (!p.success) throw new ApiError(400, p.error.issues[0]?.message ?? "Pedido inválido.", "bad_request");
     const d = p.data;
+    await saveAttribution({ email: d.email, softwareId: caller.softwareId, page: new URL(d.source_url).pathname, ad: d.ad ?? null });
+    if (!d.consent) return Response.json({ sent: false, reason: "sem consentimento de marketing" }, { status: 202 });
     const person = { email: d.email, phone: d.phone, name: d.name, clientIp: d.client_ip, userAgent: d.user_agent, fbp: d.fbp, fbc: d.fbc };
     await saveConsent({ ...person, softwareId: caller.softwareId, leadEventId: d.event_id, sourceUrl: d.source_url });
     if (!capiConfigured()) return Response.json({ sent: false, reason: "META_CAPI_TOKEN não configurado" }, { status: 202 });
