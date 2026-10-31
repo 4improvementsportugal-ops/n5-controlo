@@ -1,7 +1,7 @@
 import { requireUser, scopeSoftwares } from "@/lib/auth";
 import { readFilters } from "@/lib/filters";
 import { campaignMonitor, monitoredCampaigns, softwaresFor } from "@/lib/queries";
-import { awarenessLevel, funnelRows, groupAds, landingPageOf } from "@/lib/metrics";
+import { adRef, awarenessLevel, funnelRows, groupAds, landingPageOf } from "@/lib/metrics";
 import { siteAnalytics, posthogConfigured, type SiteData } from "@/lib/posthog";
 import { siteFor } from "@/lib/siteQueries";
 import { fmtDate, fmtEur, fmtNum, fmtPct } from "@/lib/format";
@@ -82,6 +82,18 @@ function Monitor({ m, chosen, list, sp, host, site, siteErrors }: {
     ...m.adInfo.filter((i) => !m.ads.some((a) => a.adId === i.adId || a.adName === i.name)).map((i) => ({ ...zero, adName: i.name, adsetName: i.adsetName ?? "", adId: i.adId, sw: i.softwareId, info: i })),
   ];
 
+  // Compras da Stripe por anúncio: pelo utm_content da ligação do anúncio (ou pelo nome, se a Meta não o deu).
+  // Cada utm_content conta uma vez, no anúncio que mais gastou, para o total da coluna bater com a Stripe.
+  const stripeOf = new Map<string, number>();
+  const usedRefs = new Set<string>();
+  for (const a of ads) {
+    const ref = a.info?.adRef || adRef(a.adName);
+    if (!ref || usedRefs.has(ref)) continue;
+    usedRefs.add(ref);
+    stripeOf.set(a.adId ?? a.adName, m.stripeByAd.get(ref) ?? 0);
+  }
+  const stripeUnlinked = m.stripeTotal - [...stripeOf.values()].reduce((s, n) => s + n, 0);
+
   // Por landing page: números da Meta pelos anúncios que levam lá, estado pelos anúncios, e o site (PostHog) nessa página
   const metaPages = new Map(groupAds(ads, (r) => landingPageOf(r.adName)).map((g) => [g.key, g]));
   const statusPages = new Map<string, { active: number; review: number; total: number }>();
@@ -128,7 +140,7 @@ function Monitor({ m, chosen, list, sp, host, site, siteErrors }: {
         <Kpi label="Gasto" value={fmtEur(t.spendCents)} note={budgetToDate ? `de ${fmtEur(budgetToDate)} de orçamento até hoje` : "desde o início"} />
         <Kpi label="Leads" value={fmtNum(t.leads)} note={`${fmtNum(t.landingViews)} visitas à página`} />
         <Kpi label="Custo por lead" value={fmtEur(perUnit(t.spendCents, t.leads))} note="gasto a dividir pelas leads" />
-        <Kpi label="Pré-reservas pagas" value={fmtNum(t.purchases)} note={`${fmtNum(t.checkouts)} foram ao pagamento`} />
+        <Kpi label="Pré-reservas pagas" value={fmtNum(m.stripeTotal)} note={`na Stripe · ${fmtNum(t.purchases)} no píxel · ${fmtNum(t.checkouts)} foram ao pagamento`} />
         <Kpi label="CTR" value={fmtPct(ratio(t.clicks, t.impressions), 2)} note={`${fmtNum(t.clicks)} cliques em ${fmtNum(t.impressions)} impressões`} />
         {m.frequency !== null ? (
           <Kpi label="Frequência" value={m.frequency.toFixed(2).replace(".", ",")} note={`vezes por pessoa · ${fmtNum(m.reach)} pessoas alcançadas`} />
@@ -194,15 +206,16 @@ function Monitor({ m, chosen, list, sp, host, site, siteErrors }: {
 
       <section className="card overflow-x-auto">
         <h2 className="h2">Anúncios</h2>
-        <p className="text-xs text-muted mb-3">Todos os anúncios da campanha, desde o início, do que gastou mais para o que gastou menos.</p>
+        <p className="text-xs text-muted mb-3">Todos os anúncios da campanha, desde o início, do que gastou mais para o que gastou menos. «Pré-reservas (píxel)» é o que a Meta conta; «Compras Stripe» são os pagamentos confirmados pela Stripe, ligados ao anúncio pela inscrição da pessoa (o utm_content com que chegou ao site).{stripeUnlinked > 0 ? ` ${fmtNum(stripeUnlinked)} ${stripeUnlinked === 1 ? "compra" : "compras"} sem anúncio ligado (sem inscrição no site com o mesmo email, ou vinda de fora dos anúncios).` : ""}</p>
         <div className="max-h-[34rem] overflow-auto">
           <table className="tbl">
-            <thead><tr><th>Anúncio</th><th>Nível</th><th>Formato</th><th>Estado</th><th className="text-right">Gasto</th><th className="text-right">Impressões</th><th className="text-right">CTR</th><th className="text-right">Leads</th><th className="text-right">Custo/lead</th><th className="text-right">Pré-reservas</th></tr></thead>
+            <thead><tr><th>Anúncio</th><th>Nível</th><th>Formato</th><th>Estado</th><th className="text-right">Gasto</th><th className="text-right">Impressões</th><th className="text-right">CTR</th><th className="text-right">Leads</th><th className="text-right">Custo/lead</th><th className="text-right">Pré-reservas (píxel)</th><th className="text-right">Compras Stripe</th></tr></thead>
             <tbody>{ads.map((a) => (
               <tr key={a.adId ?? a.adName}><td className="max-w-xs">{a.adName}</td><td>{awarenessLevel(a.adName) ? `N${awarenessLevel(a.adName)}` : "–"}</td>
                 <td>{a.info?.format === "video" ? "Vídeo" : a.info ? "Imagem" : "–"}</td><td>{a.info?.status ? STATUS[a.info.status] ?? a.info.status : "–"}</td>
                 <td className="num text-right">{fmtEur(a.spendCents)}</td><td className="num text-right">{fmtNum(a.impressions)}</td><td className="num text-right">{fmtPct(ratio(a.clicks, a.impressions), 2)}</td>
-                <td className="num text-right">{fmtNum(a.leads)}</td><td className="num text-right">{fmtEur(perUnit(a.spendCents, a.leads))}</td><td className="num text-right">{fmtNum(a.purchases)}</td></tr>
+                <td className="num text-right">{fmtNum(a.leads)}</td><td className="num text-right">{fmtEur(perUnit(a.spendCents, a.leads))}</td><td className="num text-right">{fmtNum(a.purchases)}</td>
+                <td className="num text-right">{fmtNum(stripeOf.get(a.adId ?? a.adName) ?? 0)}</td></tr>
             ))}</tbody>
           </table>
         </div>

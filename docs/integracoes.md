@@ -90,16 +90,20 @@ Envia à Meta, pelo servidor, as inscrições e as compras dos sites N5, para os
 - `META_CAPI_TEST_CODE`: código do separador «Testar eventos», só enquanto se testa.
 - `META_CAPI_PAYMENT_LINKS`: Payment Links da Stripe que contam como compra, `plink_…:sw_…` separados por vírgulas. A pré-reserva da N5 Clara já vem predefinida.
 
-**Inscrição (Lead).** O site envia `POST /api/v1/conversions` com uma chave `events:write` ligada ao software:
+**Inscrição (Lead).** O site envia `POST /api/v1/conversions` com uma chave `events:write` ligada ao software, em todas as inscrições:
 
 ```json
-{ "event": "Lead", "event_id": "o mesmo eventID do píxel", "email": "…", "phone": "…", "name": "…",
-  "fbp": "_fbp", "fbc": "_fbc", "client_ip": "…", "user_agent": "…", "source_url": "https://clara.numerocinco.pt/leads/", "consent": true }
+{ "event": "Lead", "event_id": "o mesmo eventID do píxel", "email": "…", "source_url": "https://clara.numerocinco.pt/leads/",
+  "ad": "cla_n2_leads", "consent": true,
+  "phone": "…", "name": "…", "fbp": "_fbp", "fbc": "_fbc", "client_ip": "…", "user_agent": "…" }
 ```
 
-O Controlo guarda o consentimento em `meta_consents` (email cifrado, identificadores do anúncio, 90 dias) e envia o Lead. A Meta junta-o ao evento do píxel pelo `event_id`, sem contar duas vezes.
+- Sempre: o Controlo guarda em `signup_attributions` o email cifrado, a página e o anúncio (`ad`, o utm_content com que a pessoa chegou). Fica só no Controlo e serve para ligar as compras da Stripe aos anúncios.
+- Com `consent: true` (cookies de marketing aceites): guarda também o consentimento em `meta_consents` (email cifrado, identificadores do anúncio, 90 dias) e envia o Lead à Meta. A Meta junta-o ao evento do píxel pelo `event_id`, sem contar duas vezes. Com `consent: false`, o site não envia telefone, nome, IP, navegador nem `_fbp`/`_fbc`, e o Controlo responde 202 sem enviar nada à Meta.
 
-**Compra (Purchase).** Quando a Stripe confirma o pagamento de um Payment Link ligado (`checkout.session.completed` pago, ou `checkout.session.async_payment_succeeded` no Multibanco), o webhook procura o consentimento pelo email e envia o Purchase com o valor pago. O `event_id` é a sessão de checkout. Sem consentimento, não envia. O site deixa de enviar o Purchase pelo píxel, para não contar duas vezes.
+**Compra (Purchase).** Quando a Stripe confirma o pagamento de um Payment Link ligado (`checkout.session.completed` pago, ou `checkout.session.async_payment_succeeded` no Multibanco), o webhook guarda a compra em `stripe_purchases` (sessão, email cifrado, valor). Se a pessoa tiver consentimento, envia também o Purchase à Meta com o valor pago; o `event_id` é a sessão de checkout. O site deixa de enviar o Purchase pelo píxel, para não contar duas vezes.
+
+**Compras Stripe por anúncio.** Em Campanhas e funil, a coluna «Compras Stripe» junta cada compra à inscrição com o mesmo email e conta-a no anúncio cujo utm_content (lido da ligação do anúncio na Meta, ou do nome `CLA · N2 · LEADS · /leads/` quando a ligação não o tem) é o da inscrição. Contam as compras desde o primeiro dia da campanha. Compras sem inscrição ligada aparecem no total e na nota da tabela, não num anúncio.
 
 ## Comunicações na app e por e-mail (módulo Reativação)
 

@@ -1,6 +1,7 @@
 import "server-only";
 import { eq, isNotNull } from "drizzle-orm";
 import { db, schema } from "@/db";
+import { adRef, utmContentOf, type AdCreativeLinks } from "@/lib/metrics";
 
 // Leitura do Meta Insights ao nível do anúncio, por dia, para os últimos 28 dias
 // (a Meta ainda corrige esses dados), mais o estado de cada anúncio e os totais de cada campanha desde o início.
@@ -88,14 +89,15 @@ async function metaGetAll<T>(url: string): Promise<T[]> {
 /** Estado e formato de cada anúncio, e os totais de cada campanha desde o início (alcance e frequência). */
 async function syncAdsAndTotals(softwareId: string, account: string, token: string, version: string) {
   const base = `https://graph.facebook.com/${version}/${account}`;
-  const ads = await metaGetAll<{ id: string; name?: string; campaign_id?: string; effective_status?: string; adset?: { name?: string }; creative?: { object_type?: string } }>(
-    `${base}/ads?${new URLSearchParams({ fields: "id,name,campaign_id,effective_status,adset{name},creative{object_type}", limit: "200", access_token: token })}`);
+  const ads = await metaGetAll<{ id: string; name?: string; campaign_id?: string; effective_status?: string; adset?: { name?: string }; creative?: { object_type?: string } & AdCreativeLinks }>(
+    `${base}/ads?${new URLSearchParams({ fields: "id,name,campaign_id,effective_status,adset{name},creative{object_type,url_tags,object_story_spec,asset_feed_spec}", limit: "200", access_token: token })}`);
   for (const a of ads) {
     if (!a.id || !a.campaign_id) continue;
     const name = a.name ?? a.id;
     const values = {
       softwareId, campaignId: a.campaign_id, name, adsetName: a.adset?.name ?? null, status: a.effective_status ?? null,
-      format: (a.creative?.object_type ?? "").toUpperCase() === "VIDEO" || /V[IÍ]DEO/i.test(name) ? "video" : "imagem", updatedAt: new Date(),
+      format: (a.creative?.object_type ?? "").toUpperCase() === "VIDEO" || /V[IÍ]DEO/i.test(name) ? "video" : "imagem",
+      adRef: adRef(utmContentOf(a.creative) ?? name) || null, updatedAt: new Date(),
     };
     await db.insert(schema.metaAds).values({ adId: a.id, ...values }).onConflictDoUpdate({ target: schema.metaAds.adId, set: values });
   }
