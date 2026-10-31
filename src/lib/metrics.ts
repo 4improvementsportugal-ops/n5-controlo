@@ -350,3 +350,45 @@ export function deadlineStatus(dueDate: string | null, phase: string, now = new 
   if (d <= soonDays) return "a_chegar";
   return "ok";
 }
+
+// ---------------- Monitorização de campanhas ----------------
+// Convenção dos nomes dos anúncios: «CLA · N3 · TEMA · /pasta/». O nível de consciência é o N1 a N5;
+// a landing page é o endereço no fim (sem endereço, a página principal).
+
+export function awarenessLevel(adName: string): number | null {
+  const m = /·\s*N([1-5])\s*·/.exec(adName ?? "");
+  return m ? Number(m[1]) : null;
+}
+
+export function landingPageOf(adName: string): string {
+  const m = /(\/[a-z0-9-]*\/?)\s*$/.exec(adName ?? "");
+  const path = m ? m[1] : "/";
+  return path.endsWith("/") ? path : `${path}/`;
+}
+
+export interface FunnelStep { label: string; n: number }
+export interface FunnelRow extends FunnelStep { share: number; fromPrevious: number | null; worst: boolean }
+
+/** Cada passo com a parte do primeiro (para a barra) e do anterior; a maior perda fica marcada. */
+export function funnelRows(steps: FunnelStep[]): FunnelRow[] {
+  const first = steps[0]?.n ?? 0;
+  const rates = steps.map((s, i) => (i === 0 || !steps[i - 1].n ? null : s.n / steps[i - 1].n));
+  const valid = rates.filter((r): r is number => r !== null);
+  const worst = valid.length ? Math.min(...valid) : null;
+  return steps.map((s, i) => ({ ...s, share: first ? s.n / first : 0, fromPrevious: rates[i], worst: worst !== null && rates[i] === worst }));
+}
+
+export interface AdTotals { spendCents: number; impressions: number; clicks: number; leads: number; landingViews: number; purchases: number }
+
+/** Soma linhas por uma chave (nível, página, ...), com o número de anúncios distintos. */
+export function groupAds<T extends AdTotals & { adName: string }>(rows: T[], key: (r: T) => string): (AdTotals & { key: string; ads: number })[] {
+  const map = new Map<string, AdTotals & { key: string; names: Set<string> }>();
+  for (const r of rows) {
+    const k = key(r);
+    const g = map.get(k) ?? { key: k, spendCents: 0, impressions: 0, clicks: 0, leads: 0, landingViews: 0, purchases: 0, names: new Set<string>() };
+    g.spendCents += r.spendCents; g.impressions += r.impressions; g.clicks += r.clicks;
+    g.leads += r.leads; g.landingViews += r.landingViews; g.purchases += r.purchases; g.names.add(r.adName);
+    map.set(k, g);
+  }
+  return [...map.values()].map(({ names, ...g }) => ({ ...g, ads: names.size }));
+}
