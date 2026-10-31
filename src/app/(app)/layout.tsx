@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { db, schema } from "@/db";
 import { canSee, getCurrentUser, type Module } from "@/lib/auth";
@@ -28,10 +28,13 @@ const NAV: { href: string; label: string; module: Module }[] = [
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  const softwares = await softwaresFor(user);
-  const critical = canSee(user.role, "alertas")
-    ? (await db.select().from(schema.alerts).where(and(eq(schema.alerts.severity, "critico"), ne(schema.alerts.status, "resolvido")))).length
-    : 0;
+  // Em paralelo, e só a contagem dos alertas críticos (antes vinham as linhas todas)
+  const [softwares, critical] = await Promise.all([
+    softwaresFor(user),
+    canSee(user.role, "alertas")
+      ? db.select({ n: sql<number>`count(*)::int` }).from(schema.alerts).where(and(eq(schema.alerts.severity, "critico"), ne(schema.alerts.status, "resolvido"))).then(([r]) => r?.n ?? 0)
+      : Promise.resolve(0),
+  ]);
   const items = NAV.filter((n) => canSee(user.role, n.module)).map((n) => ({ href: n.href, label: n.label, badge: n.href === "/alertas" ? critical : undefined }));
   return (
     <div className="min-h-screen md:flex">
