@@ -1,13 +1,15 @@
 "use client";
 import { useActionState } from "react";
+import { Simbolo } from "@/components/Simbolo";
 import { login } from "./actions";
 
 export default function LoginPage() {
   const demo = process.env.NEXT_PUBLIC_DEMO_DATA === "true";
   const [state, action, pending] = useActionState(login, undefined);
   return (
-    <main className="min-h-screen grid place-items-center px-4">
-      <form action={action} className="card w-full max-w-sm space-y-4">
+    <main className="min-h-screen flex flex-col items-center justify-center gap-8 bg-ink px-4 py-10">
+      <Simbolo fundo="escuro" largura={96} />
+      <form action={action} className="card w-full max-w-sm space-y-4 p-6">
         <div>
           <h1 className="h1">Controlo N5</h1>
           <p className="text-muted text-sm mt-1">Acesso só para a equipa.</p>
