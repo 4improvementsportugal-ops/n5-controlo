@@ -6,6 +6,7 @@ import { db, schema } from "@/db";
 import { requireUser } from "@/lib/auth";
 import { generateKey, hashKey, SCOPES } from "@/lib/apikeys";
 import { audit } from "@/lib/audit";
+import { deleteExampleData } from "@/lib/exampleDataDb";
 
 const list = (v: FormDataEntryValue | null) => String(v ?? "").split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
 const cents = (v: FormDataEntryValue | null) => { const s = String(v ?? "").trim(); if (!s) return null; const n = Math.round(Number(s.replace(",", ".")) * 100); return Number.isFinite(n) ? n : null; };
@@ -93,4 +94,21 @@ export async function revokeApiKey(form: FormData) {
   await db.update(schema.apiKeys).set({ revokedAt: new Date() }).where(eq(schema.apiKeys.id, id));
   await audit(`user:${user.sub}`, "apikey.revoked", "api_key", id);
   revalidatePath("/definicoes");
+}
+
+/** Apaga os dados de exemplo do seed. Só sócios, com confirmação escrita; fica na auditoria com o que saiu de cada tabela. */
+export async function removeExampleData(_prev: { error?: string; ok?: string } | undefined, form: FormData) {
+  const user = await requireUser("definicoes");
+  if (user.role !== "socio") return { error: "Só um sócio pode apagar os dados de exemplo." };
+  if (String(form.get("confirmar") ?? "").trim().toUpperCase() !== "APAGAR") return { error: "Escreve APAGAR para confirmar." };
+  try {
+    const result = await deleteExampleData(user.sub);
+    const total = result.reduce((s, r) => s + r.rows, 0);
+    await audit(`user:${user.sub}`, "exemplo.apagado", "dados_exemplo", null, null, result.filter((r) => r.rows > 0));
+    revalidatePath("/", "layout");
+    return { ok: total ? `Apagados ${total.toLocaleString("pt-PT")} registos de exemplo.` : "Já não havia dados de exemplo." };
+  } catch (err) {
+    console.error("Apagar dados de exemplo falhou:", err);
+    return { error: "Não foi possível apagar: nada foi alterado. Tenta de novo ou vê os registos do servidor." };
+  }
 }
