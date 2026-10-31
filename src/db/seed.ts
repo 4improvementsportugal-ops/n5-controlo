@@ -1,13 +1,19 @@
 // Dados de EXEMPLO para desenvolvimento e demonstração. Não correr em produção.
 // Cria os dois softwares reais (N5 Clara e N5 Imobiliário) com a sua configuração base e,
 // à volta deles, contas, feedback, campanhas e eventos inventados, marcados como exemplo.
+import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { db, schema, sql } from "./index";
 
-if (process.env.NODE_ENV === "production" && !process.argv.includes("--force")) {
+// Nunca em produção: nem com NODE_ENV=production nem no deploy de produção da Netlify (CONTEXT=production).
+// No build (--if-empty) sai sem erro, para não partir o deploy; corrido à mão, falha.
+if ((process.env.NODE_ENV === "production" || process.env.CONTEXT === "production") && !process.argv.includes("--force")) {
   console.error("Recusado: o seed cria dados de exemplo. Em produção usa só scripts/create-user.ts.");
-  process.exit(1);
+  process.exit(process.argv.includes("--if-empty") ? 0 : 1);
 }
+
+// Palavra-passe dos logins de exemplo: DEMO_PASSWORD (12+ caracteres) ou uma gerada agora. Nunca fica escrita no código.
+const demoPassword = (process.env.DEMO_PASSWORD ?? "").length >= 12 ? process.env.DEMO_PASSWORD! : randomBytes(12).toString("base64url");
 
 const day = 864e5;
 const now = Date.now();
@@ -50,7 +56,7 @@ async function main() {
     },
   ]);
 
-  const pass = await bcrypt.hash("exemplo-n5-2026!", 12);
+  const pass = await bcrypt.hash(demoPassword, 12);
   const [socio] = await db.insert(schema.users).values({ email: "socio@exemplo.n5", name: "Sócio (exemplo)", role: "socio", passwordHash: pass }).returning();
   const [colab] = await db.insert(schema.users).values({ email: "colaborador@exemplo.n5", name: "Colaborador (exemplo)", role: "colaborador", passwordHash: pass }).returning();
   await db.insert(schema.userSoftwares).values({ userId: colab.id, softwareId: "sw_clara" });
@@ -268,7 +274,7 @@ async function main() {
     { module: "campanhas", softwareId: "sw_imobiliario", severity: "aviso", title: "Custo por registo alto: N5 Imobiliário", detail: "Acima de 40,00 € nos últimos dois dias", dedupeKey: "ex-3" },
   ]);
 
-  console.log("Dados de exemplo criados. Entra com socio@exemplo.n5 / exemplo-n5-2026! (ou colaborador@exemplo.n5).");
+  console.log(`Dados de exemplo criados. Entra com socio@exemplo.n5 (ou colaborador@exemplo.n5) e ${process.env.DEMO_PASSWORD ? "a palavra-passe de DEMO_PASSWORD" : `a palavra-passe ${demoPassword}, gerada agora (define DEMO_PASSWORD para a fixar)`}.`);
   await sql.end();
 }
 

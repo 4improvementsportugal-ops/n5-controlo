@@ -4,7 +4,6 @@ import { Simbolo } from "@/components/Simbolo";
 import { login } from "./actions";
 
 export default function LoginPage() {
-  const demo = process.env.NEXT_PUBLIC_DEMO_DATA === "true";
   const [state, action, pending] = useActionState(login, undefined);
   return (
     <main className="min-h-screen flex flex-col items-center justify-center gap-8 bg-ink px-4 py-10">
@@ -23,7 +22,6 @@ export default function LoginPage() {
           <input id="password" name="password" type="password" autoComplete="current-password" required className="input" />
         </div>
         {state?.error ? <p className="text-bad text-sm" role="alert">{state.error}</p> : null}
-        {demo ? <p className="text-xs text-muted">Demonstração com dados de exemplo: socio@exemplo.n5 · exemplo-n5-2026!</p> : null}
         <button className="btn btn-primary w-full justify-center" disabled={pending}>{pending ? "A entrar…" : "Entrar"}</button>
       </form>
     </main>

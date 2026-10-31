@@ -22,8 +22,9 @@ services:
         generateValue: true
       - key: DEMO_DATA
         value: "true"
-      - key: NEXT_PUBLIC_DEMO_DATA
-        value: "true"
+      # Palavra-passe dos logins de exemplo: gerada pelo Render (Environment), nunca no repositório
+      - key: DEMO_PASSWORD
+        generateValue: true
 databases:
   - name: n5-db
     plan: free

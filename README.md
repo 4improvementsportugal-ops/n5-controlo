@@ -38,7 +38,7 @@ App completa, com login e base de dados, na Netlify: ver `docs/deploy-netlify.md
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/4improvementsportugal-ops/n5-controlo)
 
-Cria a app e a base de dados em Frankfurt com dados de exemplo (`render.yaml`). Entra com `socio@exemplo.n5` / `exemplo-n5-2026!`. O plano grátis adormece sem uso e a base de dados grátis do Render expira ao fim de 30 dias: serve para ver, não para produção.
+Cria a app e a base de dados em Frankfurt com dados de exemplo (`render.yaml`). Entra com `socio@exemplo.n5` e a palavra-passe que o Render gera em `DEMO_PASSWORD` (Environment). O plano grátis adormece sem uso e a base de dados grátis do Render expira ao fim de 30 dias: serve para ver, não para produção.
 
 ## Correr localmente
 
@@ -48,11 +48,11 @@ Precisas de Node 22 e Postgres 16 (ou Docker).
 cp .env.example .env          # preenche SESSION_SECRET com 32+ caracteres
 npm install
 npm run db:migrate
-npm run db:seed               # dados de EXEMPLO; nunca em produção
+npm run db:seed               # dados de EXEMPLO; nunca em produção (recusa-se)
 npm run dev                   # http://localhost:3000
 ```
 
-Com o seed, entra com `socio@exemplo.n5` ou `colaborador@exemplo.n5`, palavra-passe `exemplo-n5-2026!`.
+Com o seed, entra com `socio@exemplo.n5` ou `colaborador@exemplo.n5` e a palavra-passe de `DEMO_PASSWORD` no `.env` (sem ela, o seed gera uma e mostra-a no fim). A palavra-passe dos dados de exemplo nunca fica no repositório, e a produção nunca leva dados de exemplo.
 
 Sem seed, cria o primeiro utilizador:
 
