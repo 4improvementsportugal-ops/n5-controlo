@@ -2,7 +2,7 @@ import { requireUser, scopeSoftwares } from "@/lib/auth";
 import { readFilters } from "@/lib/filters";
 import { aboOverview, campaigns, softwaresFor } from "@/lib/queries";
 import { fmtDate, fmtDateTime, fmtEur, fmtNum, fmtPct } from "@/lib/format";
-import { Bar, Empty, Kpi, PageHeader, Pill } from "@/components/ui";
+import { Bar, Empty, Kpi, PageHeader, Pill, Tabs, withParams } from "@/components/ui";
 import { ImportForm } from "./ImportForm";
 import { AboForm } from "./AboForm";
 import { syncNow, toggleAboCampaign } from "./actions";
@@ -39,6 +39,7 @@ export default async function Campanhas({ searchParams }: { searchParams: Promis
       <PageHeader title="Campanhas e funil" lead="Do gasto na Meta ao cliente pagante, por software.">
         <form action={syncNow}><button className="btn">Sincronizar Meta agora</button></form>
       </PageHeader>
+      <Tabs items={[{ key: "geral", label: "Visão geral", href: withParams("/campanhas", sp) }, { key: "monitorizacao", label: "Monitorização", href: withParams("/campanhas/monitorizacao", sp) }]} active="geral" />
       {funnel ? (
         <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
           <Kpi label="Gasto" value={fmtEur(funnel.spend)} />
