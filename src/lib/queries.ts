@@ -360,19 +360,29 @@ export async function campaignMonitor(campaignId: string, softwareIds: string[])
     spendCents: sql<number>`sum(${schema.campaignDaily.spendCents})::int`, impressions: sql<number>`sum(${schema.campaignDaily.impressions})::int`,
     clicks: sql<number>`sum(${schema.campaignDaily.clicks})::int`, leads: sql<number>`sum(${schema.campaignDaily.leads})::int`,
     landingViews: sql<number>`sum(${schema.campaignDaily.landingViews})::int`, purchases: sql<number>`sum(${schema.campaignDaily.purchases})::int`,
+    checkouts: sql<number>`sum(${schema.campaignDaily.checkouts})::int`,
   };
   const ads = await db.select({
-    adName: schema.campaignDaily.adName, adsetName: sql<string>`max(${schema.campaignDaily.adsetName})`, ...sums,
+    adName: schema.campaignDaily.adName, adsetName: sql<string>`max(${schema.campaignDaily.adsetName})`, adId: sql<string | null>`max(${schema.campaignDaily.adId})`, sw: sql<string>`max(${schema.campaignDaily.softwareId})`, ...sums,
     maxFrequency: sql<number | null>`max(${schema.campaignDaily.frequency})::float`,
     lastSpend: sql<string | null>`max(case when ${schema.campaignDaily.spendCents} > 0 then ${schema.campaignDaily.date} end)::text`,
   }).from(schema.campaignDaily).where(where).groupBy(schema.campaignDaily.adName).orderBy(desc(sql`sum(${schema.campaignDaily.spendCents})`));
   if (!ads.length) return null;
-  const days = await db.select({ date: sql<string>`${schema.campaignDaily.date}::text`, ...sums })
-    .from(schema.campaignDaily).where(where).groupBy(schema.campaignDaily.date).orderBy(schema.campaignDaily.date);
-  const [abo] = await db.select().from(schema.metaAboCampaigns).where(eq(schema.metaAboCampaigns.campaignId, campaignId));
+  const [days, [abo], adInfo, [campaignTotals]] = await Promise.all([
+    db.select({ date: sql<string>`${schema.campaignDaily.date}::text`, ...sums })
+      .from(schema.campaignDaily).where(where).groupBy(schema.campaignDaily.date).orderBy(schema.campaignDaily.date),
+    db.select().from(schema.metaAboCampaigns).where(eq(schema.metaAboCampaigns.campaignId, campaignId)),
+    // Estado e formato de todos os anúncios da campanha, também os que ainda não gastaram
+    db.select().from(schema.metaAds).where(and(eq(schema.metaAds.campaignId, campaignId), inArray(schema.metaAds.softwareId, softwareIds))),
+    db.select().from(schema.metaCampaignTotals).where(eq(schema.metaCampaignTotals.campaignId, campaignId)),
+  ]);
   const totals = ads.reduce((a, r) => ({
     spendCents: a.spendCents + r.spendCents, impressions: a.impressions + r.impressions, clicks: a.clicks + r.clicks,
-    leads: a.leads + r.leads, landingViews: a.landingViews + r.landingViews, purchases: a.purchases + r.purchases,
-  }), { spendCents: 0, impressions: 0, clicks: 0, leads: 0, landingViews: 0, purchases: 0 });
-  return { ads, days, totals, dailyBudgetCents: abo?.dailyBudgetCents ?? null, first: days[0]?.date ?? null, last: days[days.length - 1]?.date ?? null };
+    leads: a.leads + r.leads, landingViews: a.landingViews + r.landingViews, purchases: a.purchases + r.purchases, checkouts: a.checkouts + r.checkouts,
+  }), { spendCents: 0, impressions: 0, clicks: 0, leads: 0, landingViews: 0, purchases: 0, checkouts: 0 });
+  return {
+    ads, days, totals, adInfo, reach: campaignTotals?.reach ?? null, frequency: campaignTotals?.frequency ? Number(campaignTotals.frequency) : null,
+    dailyBudgetCents: abo?.dailyBudgetCents ?? null, first: days[0]?.date ?? null, last: days[days.length - 1]?.date ?? null,
+    softwareId: ads[0]?.sw ?? null,
+  };
 }
