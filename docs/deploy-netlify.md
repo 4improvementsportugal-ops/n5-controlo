@@ -23,18 +23,17 @@ Recomendado: um projeto Supabase em Frankfurt (`eu-central-1`) ou Irlanda (`eu-w
 | `SESSION_SECRET` | String aleatória com 32+ caracteres |
 | `CRON_SECRET` | String aleatória longa |
 | `APP_URL` | Endereço do site, por exemplo `https://n5-controlo.netlify.app` |
-| `DEMO_DATA` e `NEXT_PUBLIC_DEMO_DATA` | Não definir: a produção não leva dados de exemplo (apagar se existirem) |
 
 As restantes (Stripe, GitHub, Slack, Meta, SES, Bedrock para os resumos do Chat) acrescentam-se quando cada ligação for configurada (`docs/integracoes.md`).
 
-3. Deploy. O build de produção aplica as migrações e compila a app. Não cria dados de exemplo.
-4. Criar o primeiro utilizador, uma vez, num computador com a `DATABASE_URL` da produção no ambiente:
+3. Deploy. O build de produção aplica as migrações e compila a app.
+4. Na produção não há dados de exemplo; o primeiro utilizador cria-se com `npm run user:create`.
 
 ```bash
 npm run user:create -- <email> "<nome>" socio '<palavra-passe com 12+ caracteres>'
 ```
 
-O mesmo comando repõe a palavra-passe de um utilizador que já existe.
+Corre-se uma vez, num computador com a `DATABASE_URL` da produção no ambiente. O mesmo comando repõe a palavra-passe de um utilizador que já existe.
 
 ## Tarefas agendadas (UTC)
 
