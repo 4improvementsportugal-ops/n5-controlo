@@ -2,11 +2,11 @@ import Link from "next/link";
 import { fmtPct } from "@/lib/format";
 
 export function Kpi({ label, value, note, tone }: { label: string; value: React.ReactNode; note?: React.ReactNode; tone?: "good" | "warn" | "bad" }) {
-  const color = tone === "good" ? "text-good" : tone === "warn" ? "text-warn" : tone === "bad" ? "text-bad" : "";
+  const color = tone === "good" ? "text-good" : tone === "warn" ? "text-warn" : tone === "bad" ? "text-bad" : "text-data";
   return (
     <div className="card min-w-0">
-      <div className="text-xs text-muted">{label}</div>
-      <div className={`num text-2xl font-medium mt-1 ${color}`}>{value}</div>
+      <div className="rotulo">{label}</div>
+      <div className={`num font-display text-2xl sm:text-[28px] font-extrabold leading-tight tracking-[-0.03em] mt-1.5 ${color}`}>{value}</div>
       {note ? <div className="text-xs text-muted mt-1">{note}</div> : null}
     </div>
   );
@@ -44,14 +44,14 @@ export function Tabs({ items, active }: { items: { key: string; label: string; h
 export function Empty({ title, children }: { title: string; children?: React.ReactNode }) {
   return (
     <div className="card text-center py-10">
-      <div className="font-semibold">{title}</div>
+      <div className="font-display font-extrabold tracking-[-0.01em]">{title}</div>
       {children ? <div className="text-muted mt-1 max-w-prose mx-auto">{children}</div> : null}
     </div>
   );
 }
 
 export function Bar({ value, max, tone = "accent" }: { value: number; max: number; tone?: "accent" | "warn" | "bad" }) {
-  const color = tone === "warn" ? "bg-warn" : tone === "bad" ? "bg-bad" : "bg-accent";
+  const color = tone === "warn" ? "bg-warn" : tone === "bad" ? "bg-bad" : "bg-data";
   const w = max > 0 ? Math.max(1, (value / max) * 100) : 0;
   return <div className="h-2.5 rounded bg-canvas border border-line overflow-hidden"><div className={`h-full ${color}`} style={{ width: `${w}%` }} /></div>;
 }

@@ -6,6 +6,7 @@ import { canSee, getCurrentUser, type Module } from "@/lib/auth";
 import { softwaresFor } from "@/lib/queries";
 import { FilterBar } from "@/components/FilterBar";
 import { Nav } from "@/components/Nav";
+import { Marca } from "@/components/Simbolo";
 import { LABELS } from "@/lib/format";
 import { logout } from "../login/actions";
 
@@ -34,13 +35,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const items = NAV.filter((n) => canSee(user.role, n.module)).map((n) => ({ href: n.href, label: n.label, badge: n.href === "/alertas" ? critical : undefined }));
   return (
     <div className="min-h-screen md:flex">
-      <aside className="md:w-60 md:shrink-0 md:min-h-screen bg-surface border-b md:border-b-0 md:border-r border-line px-3 py-4 flex flex-col gap-4">
+      <aside className="md:w-60 md:shrink-0 md:min-h-screen bg-ink text-cream px-3 py-5 flex flex-col gap-5">
         <div className="px-3">
-          <div className="font-semibold text-lg tracking-tight">Controlo N5</div>
-          <div className="text-xs text-muted">{user.name} · {LABELS.role[user.role]}</div>
+          <Marca fundo="escuro" />
+          <div className="text-xs text-cream/60 mt-2.5">{user.name} · {LABELS.role[user.role]}</div>
         </div>
         <nav aria-label="Módulos"><Suspense><Nav items={items} /></Suspense></nav>
-        <form action={logout} className="mt-auto px-3"><button className="text-sm text-muted hover:text-ink">Sair</button></form>
+        <form action={logout} className="mt-auto px-3"><button className="text-sm text-cream/60 hover:text-cream">Sair</button></form>
       </aside>
       <div className="flex-1 min-w-0">
         <div className="sticky top-0 z-10 bg-canvas/95 backdrop-blur border-b border-line px-4 md:px-8 py-3">

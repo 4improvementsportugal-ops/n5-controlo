@@ -15,7 +15,7 @@ export function Nav({ items }: { items: { href: string; label: string; badge?: n
         return (
           <li key={i.href}>
             <Link href={`${i.href}${qs}`} aria-current={active ? "page" : undefined}
-              className={`flex items-center justify-between rounded-md px-3 py-2 text-sm ${active ? "bg-accent-soft text-accent font-semibold" : "text-ink hover:bg-canvas"}`}>
+              className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${active ? "bg-white/10 text-cream font-semibold shadow-[inset_3px_0_0_theme(colors.gold.DEFAULT)]" : "text-cream/75 hover:bg-white/5 hover:text-cream"}`}>
               {i.label}
               {i.badge ? <span className="num text-xs rounded-full bg-bad text-white px-1.5">{i.badge}</span> : null}
             </Link>
