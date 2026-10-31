@@ -8,7 +8,8 @@ Recomendado: um projeto Supabase em Frankfurt (`eu-central-1`) ou Irlanda (`eu-w
 
 - Em `DATABASE_URL` usa a ligação **via pooler** (Supavisor, porta 6543). A app deteta o pooler e desliga os *prepared statements*.
 - As migrações correm no build de produção (`npm run db:migrate`), por isso a base de dados tem de aceitar ligações da Netlify.
-- As pré-visualizações dos PR (`deploy-preview`) e os deploys de outros ramos (`branch-deploy`) só correm `npm run build`, sem migrações nem seed. Recebem a mesma `DATABASE_URL` da produção, e uma migração por rever não pode chegar à base de produção antes do merge. Uma pré-visualização com migrações novas compila, mas os ecrãs que dependem dessas migrações podem falhar até ao merge.
+- A produção é o sistema real: o build não corre o seed e a base não leva dados de exemplo.
+- As pré-visualizações dos PR (`deploy-preview`) e os deploys de outros ramos (`branch-deploy`) só correm `npm run build`, sem migrações. Recebem a mesma `DATABASE_URL` da produção, e uma migração por rever não pode chegar à base de produção antes do merge. Uma pré-visualização com migrações novas compila, mas os ecrãs que dependem dessas migrações podem falhar até ao merge.
 - Alternativa: Netlify Database (só em planos por créditos). A app lê `NETLIFY_DB_URL` se `DATABASE_URL` não existir.
 
 ## Passos
@@ -22,12 +23,18 @@ Recomendado: um projeto Supabase em Frankfurt (`eu-central-1`) ou Irlanda (`eu-w
 | `SESSION_SECRET` | String aleatória com 32+ caracteres |
 | `CRON_SECRET` | String aleatória longa |
 | `APP_URL` | Endereço do site, por exemplo `https://n5-controlo.netlify.app` |
-| `DEMO_DATA` e `NEXT_PUBLIC_DEMO_DATA` | `true` enquanto for demonstração com dados de exemplo; apagar antes de usar dados reais |
+| `DEMO_DATA` e `NEXT_PUBLIC_DEMO_DATA` | Não definir: a produção não leva dados de exemplo (apagar se existirem) |
 
 As restantes (Stripe, GitHub, Slack, Meta, SES, Bedrock para os resumos do Chat) acrescentam-se quando cada ligação for configurada (`docs/integracoes.md`).
 
-3. Deploy. O build de produção aplica as migrações, cria os dados de exemplo se a base estiver vazia e `DEMO_DATA=true`, e compila a app.
-4. Entrar com `socio@exemplo.n5` / `exemplo-n5-2026!` (só com dados de exemplo).
+3. Deploy. O build de produção aplica as migrações e compila a app. Não cria dados de exemplo.
+4. Criar o primeiro utilizador, uma vez, num computador com a `DATABASE_URL` da produção no ambiente:
+
+```bash
+npm run user:create -- <email> "<nome>" socio '<palavra-passe com 12+ caracteres>'
+```
+
+O mesmo comando repõe a palavra-passe de um utilizador que já existe.
 
 ## Tarefas agendadas (UTC)
 
