@@ -14,7 +14,7 @@ Recomendado: um projeto Supabase em Frankfurt (`eu-central-1`) ou Irlanda (`eu-w
 
 ## Passos
 
-1. Netlify › Add new project › Import an existing project › GitHub › `4improvementsportugal-ops/n5-controlo`, branch `main`. O `netlify.toml` já define o build.
+1. Netlify › Add new project › Import an existing project › GitHub › `n5-brand/n5-controlo`, branch `main`. O `netlify.toml` já define o build.
 2. Antes do primeiro deploy, em Site configuration › Environment variables:
 
 | Variável | Valor |

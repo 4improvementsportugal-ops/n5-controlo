@@ -32,11 +32,11 @@ Acessos: sócios e direção de operações veem tudo (incluindo Reativação); 
 
 ## Ver online (demonstração)
 
-Demonstração estática dos dashboards no GitHub Pages: https://4improvementsportugal-ops.github.io/n5-controlo/ (dados de exemplo; filtros e formulários não funcionam). Para a atualizar: `python3 scripts/export-demo.py` (instruções no próprio script).
+Demonstração estática dos dashboards no GitHub Pages: https://n5-brand.github.io/n5-controlo/ (dados de exemplo; filtros e formulários não funcionam). Para a atualizar: `python3 scripts/export-demo.py` (instruções no próprio script).
 
 App completa, com login e base de dados, na Netlify: ver `docs/deploy-netlify.md`. Alternativa no Render:
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/4improvementsportugal-ops/n5-controlo)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/n5-brand/n5-controlo)
 
 Cria a app e a base de dados em Frankfurt com dados de exemplo (`render.yaml`). Entra com `socio@exemplo.n5` e a palavra-passe que o Render gera em `DEMO_PASSWORD` (Environment). O plano grátis adormece sem uso e a base de dados grátis do Render expira ao fim de 30 dias: serve para ver, não para produção.
 
