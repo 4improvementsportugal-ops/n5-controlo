@@ -275,6 +275,23 @@ export const campaignDaily = pgTable("campaign_daily", {
   frequency: numeric("frequency", { precision: 6, scale: 2 }),
 }, (t) => [uniqueIndex("campaign_daily_uniq").on(t.campaignId, t.adsetName, t.adName, t.date)]);
 
+// API de Conversões da Meta: quem se inscreveu num site N5 e aceitou os cookies de marketing.
+// Serve para enviar à Meta a compra quando a Stripe a confirmar, com os mesmos identificadores do anúncio.
+// Sem consentimento não há linha; cada linha apaga-se ao fim de 90 dias (tarefa meta-sync).
+export const metaConsents = pgTable("meta_consents", {
+  emailHash: text("email_hash").primaryKey(), // SHA-256 do email normalizado, igual ao que vai para a Meta
+  softwareId: text("software_id").notNull().references(() => softwares.id),
+  leadEventId: text("lead_event_id"),
+  fbp: text("fbp"),
+  fbc: text("fbc"),
+  clientIp: text("client_ip"),
+  userAgent: text("user_agent"),
+  sourceUrl: text("source_url"),
+  consentedAt: timestamp("consented_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  purchaseSentAt: timestamp("purchase_sent_at", { withTimezone: true }),
+}, (t) => [index("meta_consents_expires_idx").on(t.expiresAt)]).enableRLS(); // sem acesso pela API pública do Supabase; a app usa a ligação direta
+
 // ---------- Orçamentos ABO (campanhas da Meta com orçamento por conjunto) ----------
 export const metaAboCampaigns = pgTable("meta_abo_campaigns", {
   campaignId: text("campaign_id").primaryKey(),

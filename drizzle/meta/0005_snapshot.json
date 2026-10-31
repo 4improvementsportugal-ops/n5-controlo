@@ -1,5 +1,5 @@
 {
-  "id": "761c9d0d-eb09-4a3f-aa45-e2da296913fb",
+  "id": "a88b2512-276c-4264-9fcc-0ce0ae8d6114",
   "prevId": "afaf2857-660e-4547-87e4-a794a68c0ffa",
   "version": "7",
   "dialect": "postgresql",
@@ -423,18 +423,6 @@
           "notNull": true,
           "default": "''"
         },
-        "adset_id": {
-          "name": "adset_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "ad_id": {
-          "name": "ad_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "date": {
           "name": "date",
           "type": "date",
@@ -464,20 +452,6 @@
         },
         "leads": {
           "name": "leads",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "landing_views": {
-          "name": "landing_views",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "purchases": {
-          "name": "purchases",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
@@ -1585,12 +1559,12 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.meta_abo_campaigns": {
-      "name": "meta_abo_campaigns",
+    "public.meta_consents": {
+      "name": "meta_consents",
       "schema": "",
       "columns": {
-        "campaign_id": {
-          "name": "campaign_id",
+        "email_hash": {
+          "name": "email_hash",
           "type": "text",
           "primaryKey": true,
           "notNull": true
@@ -1601,50 +1575,83 @@
           "primaryKey": false,
           "notNull": true
         },
-        "account_id": {
-          "name": "account_id",
+        "lead_event_id": {
+          "name": "lead_event_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
-        "name": {
-          "name": "name",
+        "fbp": {
+          "name": "fbp",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
-        "daily_budget_cents": {
-          "name": "daily_budget_cents",
-          "type": "integer",
+        "fbc": {
+          "name": "fbc",
+          "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
-        "abo_since": {
-          "name": "abo_since",
-          "type": "date",
+        "client_ip": {
+          "name": "client_ip",
+          "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
-        "auto": {
-          "name": "auto",
-          "type": "boolean",
+        "user_agent": {
+          "name": "user_agent",
+          "type": "text",
           "primaryKey": false,
-          "notNull": true,
-          "default": true
+          "notNull": false
         },
-        "created_at": {
-          "name": "created_at",
+        "source_url": {
+          "name": "source_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "consented_at": {
+          "name": "consented_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "purchase_sent_at": {
+          "name": "purchase_sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "meta_consents_expires_idx": {
+          "name": "meta_consents_expires_idx",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
-        "meta_abo_campaigns_software_id_softwares_id_fk": {
-          "name": "meta_abo_campaigns_software_id_softwares_id_fk",
-          "tableFrom": "meta_abo_campaigns",
+        "meta_consents_software_id_softwares_id_fk": {
+          "name": "meta_consents_software_id_softwares_id_fk",
+          "tableFrom": "meta_consents",
           "tableTo": "softwares",
           "columnsFrom": [
             "software_id"
@@ -1660,146 +1667,7 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.meta_budget_decisions": {
-      "name": "meta_budget_decisions",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "moment": {
-          "name": "moment",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "campaign_id": {
-          "name": "campaign_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "adset_id": {
-          "name": "adset_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "adset_name": {
-          "name": "adset_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "ad_name": {
-          "name": "ad_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "action": {
-          "name": "action",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "from_cents": {
-          "name": "from_cents",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "to_cents": {
-          "name": "to_cents",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "metric": {
-          "name": "metric",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cost_cents": {
-          "name": "cost_cents",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "incoming": {
-          "name": "incoming",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "applied": {
-          "name": "applied",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "error_code": {
-          "name": "error_code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "meta_budget_decisions_campaign": {
-          "name": "meta_budget_decisions_campaign",
-          "columns": [
-            {
-              "expression": "campaign_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
+      "isRLSEnabled": true
     },
     "public.mrr_monthly": {
       "name": "mrr_monthly",
