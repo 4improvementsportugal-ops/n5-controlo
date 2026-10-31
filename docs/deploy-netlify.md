@@ -7,7 +7,8 @@ A Netlify corre a app Next.js com o adaptador oficial (instalado automaticamente
 Recomendado: um projeto Supabase em Frankfurt (`eu-central-1`) ou Irlanda (`eu-west-1`).
 
 - Em `DATABASE_URL` usa a ligação **via pooler** (Supavisor, porta 6543). A app deteta o pooler e desliga os *prepared statements*.
-- As migrações correm em cada build (`npm run db:migrate`), por isso a base de dados tem de aceitar ligações da Netlify.
+- As migrações correm no build de produção (`npm run db:migrate`), por isso a base de dados tem de aceitar ligações da Netlify.
+- As pré-visualizações dos PR (`deploy-preview`) e os deploys de outros ramos (`branch-deploy`) só correm `npm run build`, sem migrações nem seed. Recebem a mesma `DATABASE_URL` da produção, e uma migração por rever não pode chegar à base de produção antes do merge. Uma pré-visualização com migrações novas compila, mas os ecrãs que dependem dessas migrações podem falhar até ao merge.
 - Alternativa: Netlify Database (só em planos por créditos). A app lê `NETLIFY_DB_URL` se `DATABASE_URL` não existir.
 
 ## Passos
@@ -25,7 +26,7 @@ Recomendado: um projeto Supabase em Frankfurt (`eu-central-1`) ou Irlanda (`eu-w
 
 As restantes (Stripe, GitHub, Slack, Meta, SES, Bedrock para os resumos do Chat) acrescentam-se quando cada ligação for configurada (`docs/integracoes.md`).
 
-3. Deploy. O build aplica as migrações, cria os dados de exemplo se a base estiver vazia e `DEMO_DATA=true`, e compila a app.
+3. Deploy. O build de produção aplica as migrações, cria os dados de exemplo se a base estiver vazia e `DEMO_DATA=true`, e compila a app.
 4. Entrar com `socio@exemplo.n5` / `exemplo-n5-2026!` (só com dados de exemplo).
 
 ## Tarefas agendadas (UTC)
