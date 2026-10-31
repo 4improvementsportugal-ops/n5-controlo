@@ -5,7 +5,7 @@ Todas as ligações verificam a assinatura de cada pedido e guardam o pedido em 
 ## Stripe
 
 - Endpoint: `https://<domínio>/api/webhooks/stripe`
-- Eventos: `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `checkout.session.completed`, `invoice.paid`, `invoice.payment_failed`.
+- Eventos: `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `invoice.paid`, `invoice.payment_failed`.
 - Segredo: `STRIPE_WEBHOOK_SECRET`.
 - Convenções obrigatórias:
   - Cada subscrição leva `metadata.n5_software` (ex.: `sw_clara`). Opcionalmente leva `metadata.n5_org_name`.
@@ -53,6 +53,26 @@ Todas as ligações verificam a assinatura de cada pedido e guardam o pedido em 
 - `/api/cron/meta-sync` lê os últimos 28 dias ao nível do anúncio, por dia, a cada 6 horas. Também existe o botão "Sincronizar Meta agora".
 - Alternativa sem token: importar o CSV exportado do Gestor de Anúncios em Campanhas e funil.
 - Atribuição: as UTMs chegam com o evento `account.signed_up` (propriedades `utm_campaign`, `fbclid`, …). O nome da campanha tem de ser igual a `utm_campaign`.
+
+## Meta (API de Conversões)
+
+Envia à Meta, pelo servidor, as inscrições e as compras dos sites N5, para os anúncios otimizarem com dados que não dependem do navegador. Só para quem aceitou os cookies de marketing no site.
+
+- `META_CAPI_TOKEN`: token gerado no Gestor de Eventos (conjunto de dados Nº5 › Definições › API de Conversões › Gerar token de acesso). Não é o mesmo que `META_ACCESS_TOKEN`.
+- `META_PIXEL_ID`: conjunto de dados; sem variável, usa o Nº5 (`2268439390668297`).
+- `META_CAPI_TEST_CODE`: código do separador «Testar eventos», só enquanto se testa.
+- `META_CAPI_PAYMENT_LINKS`: Payment Links da Stripe que contam como compra, `plink_…:sw_…` separados por vírgulas. A pré-reserva da N5 Clara já vem predefinida.
+
+**Inscrição (Lead).** O site envia `POST /api/v1/conversions` com uma chave `events:write` ligada ao software:
+
+```json
+{ "event": "Lead", "event_id": "o mesmo eventID do píxel", "email": "…", "phone": "…", "name": "…",
+  "fbp": "_fbp", "fbc": "_fbc", "client_ip": "…", "user_agent": "…", "source_url": "https://clara.numerocinco.pt/leads/", "consent": true }
+```
+
+O Controlo guarda o consentimento em `meta_consents` (email cifrado, identificadores do anúncio, 90 dias) e envia o Lead. A Meta junta-o ao evento do píxel pelo `event_id`, sem contar duas vezes.
+
+**Compra (Purchase).** Quando a Stripe confirma o pagamento de um Payment Link ligado (`checkout.session.completed` pago, ou `checkout.session.async_payment_succeeded` no Multibanco), o webhook procura o consentimento pelo email e envia o Purchase com o valor pago. O `event_id` é a sessão de checkout. Sem consentimento, não envia. O site deixa de enviar o Purchase pelo píxel, para não contar duas vezes.
 
 ## Comunicações na app e por e-mail (módulo Reativação)
 
