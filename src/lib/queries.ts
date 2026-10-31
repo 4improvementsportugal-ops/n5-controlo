@@ -304,3 +304,24 @@ export async function trials(softwareIds: string[]) {
   const converted = ended.filter((r) => ["active", "past_due"].includes(r.s.status));
   return { active, conversion: ended.length ? converted.length / ended.length : null };
 }
+
+// ---------------- Orçamentos ABO ----------------
+/** Campanhas ligadas às regras ABO, com as decisões da última análise e as mudanças anteriores. */
+export async function aboOverview(softwareIds: string[]) {
+  if (!softwareIds.length) return [];
+  const campaigns = await db.select().from(schema.metaAboCampaigns)
+    .where(inArray(schema.metaAboCampaigns.softwareId, softwareIds)).orderBy(schema.metaAboCampaigns.createdAt);
+  const out = [];
+  for (const c of campaigns) {
+    const recent = await db.select().from(schema.metaBudgetDecisions)
+      .where(eq(schema.metaBudgetDecisions.campaignId, c.campaignId))
+      .orderBy(desc(schema.metaBudgetDecisions.createdAt), schema.metaBudgetDecisions.id).limit(120);
+    const lastRun = recent[0]?.runId;
+    out.push({
+      ...c,
+      last: recent.filter((d) => d.runId === lastRun).sort((a, b) => a.id - b.id),
+      history: recent.filter((d) => d.runId !== lastRun && d.action !== "manter").slice(0, 30),
+    });
+  }
+  return out;
+}

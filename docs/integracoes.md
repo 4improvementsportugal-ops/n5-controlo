@@ -53,6 +53,33 @@ Todas as ligações verificam a assinatura de cada pedido e guardam o pedido em 
 - `/api/cron/meta-sync` lê os últimos 28 dias ao nível do anúncio, por dia, a cada 6 horas. Também existe o botão "Sincronizar Meta agora".
 - Alternativa sem token: importar o CSV exportado do Gestor de Anúncios em Campanhas e funil.
 - Atribuição: as UTMs chegam com o evento `account.signed_up` (propriedades `utm_campaign`, `fbclid`, …). O nome da campanha tem de ser igual a `utm_campaign`.
+- A sincronização guarda também os IDs do conjunto e do anúncio, as visitas à página (`landing_page_view`) e as compras do píxel.
+
+### Orçamentos ABO
+
+Regra da N5: até 1000 € por mês, cada campanha tem orçamento em cada conjunto de anúncios (ABO), com um criativo por conjunto. Acima disso passa a CBO. As regras estão em `src/lib/abo.ts` (funções puras, com testes em `tests/abo.test.ts`) e correm a partir de `src/lib/meta-abo.ts`.
+
+**Ligar uma campanha.** Em Campanhas e funil › Ligar campanha às regras ABO, indica o ID da campanha, o total do dia e o dia em que passou a ABO. Os números contam a partir desse dia. O software tem de ter a conta de anúncios nas Definições.
+
+**Quando corre.** `/api/cron/meta-budget?momento=manha` às 08:00 e `?momento=noite` às 20:00, pelas tarefas `netlify/functions/cron-meta-budget-*.mts` (em UTC). Cada corrida sincroniza os últimos 3 dias e depois decide.
+
+De manhã:
+- O anúncio que a Meta reprovou, ou que gastou 15 € sem inscrições e com visitas a 2× a média, dá lugar ao seguinte da fila. A fila são os anúncios pausados da campanha, com os do mesmo nível de consciência primeiro.
+- Entre os que já gastaram 8 €, 20% do orçamento do pior passa para o melhor.
+- O total do dia volta ao da campanha, com 3 a 10 € por conjunto.
+
+À noite:
+- Só se corta 20% a quem gastou 4 € no dia sem visitas.
+- Os anúncios reprovados são trocados.
+
+**Como se compara.** O custo compara-se pelo passo mais avançado com dados: pré-reservas pagas (3 ou mais), inscrições (5 ou mais), visitas (5 ou mais) ou, por fim, cliques.
+
+**Tokens.** Os conjuntos e os anúncios leem-se em direto com `META_ACCESS_TOKEN`. As mudanças só se fazem com `META_ADS_TOKEN_GESTAO`, um token de sistema com `ads_management`, depois de confirmar essa permissão. Sem ele, as decisões ficam só propostas. O token vai sempre no cabeçalho, nunca no endereço.
+
+**O que fica registado.**
+- Cada decisão fica em `meta_budget_decisions`, com o motivo, e aparece em Campanhas e funil.
+- Geram alertas: falhas ao aplicar, análises que falham e um token de gestão sem a permissão. As trocas de criativo ficam como informação.
+- O botão «Desligar regras» faz as regras deixarem de mexer nessa campanha.
 
 ## Meta (API de Conversões)
 

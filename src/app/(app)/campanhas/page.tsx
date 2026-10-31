@@ -1,10 +1,24 @@
 import { requireUser, scopeSoftwares } from "@/lib/auth";
 import { readFilters } from "@/lib/filters";
-import { campaigns, softwaresFor } from "@/lib/queries";
-import { fmtEur, fmtNum, fmtPct } from "@/lib/format";
-import { Bar, Empty, Kpi, PageHeader } from "@/components/ui";
+import { aboOverview, campaigns, softwaresFor } from "@/lib/queries";
+import { fmtDate, fmtDateTime, fmtEur, fmtNum, fmtPct } from "@/lib/format";
+import { Bar, Empty, Kpi, PageHeader, Pill } from "@/components/ui";
 import { ImportForm } from "./ImportForm";
-import { syncNow } from "./actions";
+import { AboForm } from "./AboForm";
+import { syncNow, toggleAboCampaign } from "./actions";
+
+const MOMENT: Record<string, string> = { manha: "manhã", noite: "noite" };
+const ACTION_TONE: Record<string, string> = { manter: "neutro", subir: "verde", descer: "amarelo", pausar: "vermelho", aviso: "aviso" };
+const actionLabel = (d: { action: string; incoming: string | null }) =>
+  d.action === "pausar" ? (d.incoming ? "Trocar" : "Parar") : ({ manter: "Manter", subir: "Subir", descer: "Descer", aviso: "Aviso" } as Record<string, string>)[d.action] ?? d.action;
+const appliedText = (d: { action: string; applied: boolean; errorCode: string | null }) => {
+  if (d.action === "manter" || d.action === "aviso") return "–";
+  if (d.applied) return "Aplicada";
+  if (d.errorCode === "sem_token_gestao") return "Só proposta (falta o token de gestão)";
+  if (d.errorCode === "gestao_sem_permissao") return "Só proposta (token sem ads_management)";
+  return `Falhou (${d.errorCode ?? "erro"})`;
+};
+const budgetText = (from: number | null, to: number | null) => (from === null ? "–" : from === to ? fmtEur(to) : `${fmtEur(from)} → ${fmtEur(to)}`);
 
 export default async function Campanhas({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await requireUser("campanhas");
@@ -13,6 +27,7 @@ export default async function Campanhas({ searchParams }: { searchParams: Promis
   const sws = await softwaresFor(user);
   const ids = scopeSoftwares(user, filters.software, sws);
   const { rows, funnel } = await campaigns(ids, filters.range);
+  const abo = await aboOverview(ids);
   const swName = (id: string) => sws.find((s) => s.id === id)?.name ?? id;
   const stages = funnel ? [
     { label: "Impressões", n: funnel.impressions }, { label: "Cliques", n: funnel.clicks }, { label: "Registos", n: funnel.signups },
@@ -71,8 +86,54 @@ export default async function Campanhas({ searchParams }: { searchParams: Promis
             )}
             <p className="text-xs text-muted mt-3">Registos e pagantes por campanha usam a UTM utm_campaign igual ao nome da campanha (convenção software_objetivo_público_data).</p>
           </section>
+          <section className="card overflow-x-auto" id="orcamentos-abo">
+            <h2 className="h2">Orçamentos ABO</h2>
+            <p className="text-xs text-muted mb-3">Um criativo por conjunto de anúncios. Às 08:00, o melhor custo ganha 20% do orçamento do pior e o total do dia volta ao da campanha, com 3 a 10 € por conjunto; quem gasta 15 € sem inscrições e com visitas ao dobro da média dá lugar ao seguinte da fila. Às 20:00 só se corta a quem gastou 4 € no dia sem visitas. Sem o token de gestão, as decisões ficam só propostas.</p>
+            {abo.length === 0 ? <Empty title="Nenhuma campanha ligada">Liga uma campanha com o formulário ao lado.</Empty> : abo.map((c) => (
+              <div key={c.campaignId} className="mb-6 last:mb-0">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                  <div className="min-w-0">
+                    <span className="font-medium">{c.name}</span>
+                    <span className="text-xs text-muted"> · {swName(c.softwareId)} · {fmtEur(c.dailyBudgetCents)} por dia · ABO desde {fmtDate(c.aboSince)}</span>
+                    {(c.dailyBudgetCents * 30.4) / 100 > 1000 ? <> <Pill tone="aviso">Acima de 1000 € por mês: passar a CBO</Pill></> : null}
+                  </div>
+                  <form action={toggleAboCampaign}>
+                    <input type="hidden" name="campaignId" value={c.campaignId} />
+                    <button className="btn">{c.auto ? "Desligar regras" : "Ligar regras"}</button>
+                  </form>
+                </div>
+                {!c.auto ? <p className="text-warn text-sm mb-2">Regras desligadas: não mexem em nada.</p> : null}
+                {c.last.length === 0 ? <p className="text-muted text-sm">Ainda sem análises. A primeira é às 08:00 ou às 20:00.</p> : (
+                  <>
+                    <p className="text-xs text-muted mb-1">Última análise: {MOMENT[c.last[0].moment] ?? c.last[0].moment}, {fmtDateTime(c.last[0].createdAt)}</p>
+                    <table className="tbl">
+                      <thead><tr><th>Conjunto</th><th>Criativo</th><th>Decisão</th><th className="text-right">Orçamento do dia</th><th>Motivo</th><th>Na Meta</th></tr></thead>
+                      <tbody>{c.last.map((d) => (
+                        <tr key={d.id}>
+                          <td className="max-w-[14rem]">{d.adsetName ?? "–"}</td><td>{d.adName ?? "–"}</td>
+                          <td><Pill tone={ACTION_TONE[d.action]}>{actionLabel(d)}</Pill></td>
+                          <td className="num text-right whitespace-nowrap">{budgetText(d.fromCents, d.toCents)}</td>
+                          <td className="max-w-md">{d.reason}</td><td className="text-sm">{appliedText(d)}</td>
+                        </tr>))}</tbody>
+                    </table>
+                  </>
+                )}
+                {c.history.length ? (
+                  <details className="mt-3">
+                    <summary className="text-sm cursor-pointer">Mudanças anteriores ({c.history.length})</summary>
+                    <ul className="mt-2 space-y-1 text-sm">{c.history.map((d) => (
+                      <li key={d.id}><span className="text-muted">{fmtDateTime(d.createdAt)} · </span>{d.adName ?? d.adsetName ?? "Campanha"}: {actionLabel(d)} {budgetText(d.fromCents, d.toCents)} · {d.reason} <span className="text-muted">({appliedText(d)})</span></li>
+                    ))}</ul>
+                  </details>
+                ) : null}
+              </div>
+            ))}
+          </section>
         </div>
-        <ImportForm softwares={sws.filter((s) => ids.includes(s.id))} />
+        <div className="space-y-4">
+          <AboForm softwares={sws.filter((s) => ids.includes(s.id))} />
+          <ImportForm softwares={sws.filter((s) => ids.includes(s.id))} />
+        </div>
       </div>
     </>
   );
