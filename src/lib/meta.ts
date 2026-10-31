@@ -3,7 +3,8 @@ import { eq, isNotNull } from "drizzle-orm";
 import { db, schema } from "@/db";
 
 // Leitura do Meta Insights ao nível do anúncio, por dia, para os últimos 28 dias
-// (a Meta ainda corrige esses dados). Precisa de META_ACCESS_TOKEN com ads_read.
+// (a Meta ainda corrige esses dados), mais o estado de cada anúncio e os totais de cada campanha desde o início.
+// Precisa de META_ACCESS_TOKEN com ads_read.
 
 interface InsightRow {
   campaign_id: string; campaign_name: string; adset_id?: string; adset_name?: string; ad_id?: string; ad_name?: string; date_start: string;
@@ -52,6 +53,7 @@ export async function syncMetaInsights(days = 28): Promise<{ software: string; r
             clicks: Number(r.clicks ?? 0), leads, frequency: r.frequency ?? null,
             landingViews: firstAction(r.actions, ["landing_page_view"]),
             purchases: firstAction(r.actions, ["offsite_conversion.fb_pixel_purchase", "purchase"]),
+            checkouts: firstAction(r.actions, ["offsite_conversion.fb_pixel_initiate_checkout", "initiate_checkout"]),
           };
           await db.insert(schema.campaignDaily).values(values).onConflictDoUpdate({
             target: [schema.campaignDaily.campaignId, schema.campaignDaily.adsetName, schema.campaignDaily.adName, schema.campaignDaily.date],
@@ -61,12 +63,51 @@ export async function syncMetaInsights(days = 28): Promise<{ software: string; r
         }
         url = json.paging?.next ?? null;
       }
+      await syncAdsAndTotals(sw.id, account, token, version);
       out.push({ software: sw.id, rows });
     } catch (err) {
       out.push({ software: sw.id, rows: 0, error: String(err) });
     }
   }
   return out;
+}
+
+async function metaGetAll<T>(url: string): Promise<T[]> {
+  const out: T[] = [];
+  let next: string | null = url;
+  for (let i = 0; next && i < 20; i++) {
+    const res: Response = await fetch(next);
+    const json = (await res.json()) as { data?: T[]; paging?: { next?: string }; error?: { message: string } };
+    if (json.error) throw new Error(json.error.message);
+    out.push(...(json.data ?? []));
+    next = json.paging?.next ?? null;
+  }
+  return out;
+}
+
+/** Estado e formato de cada anúncio, e os totais de cada campanha desde o início (alcance e frequência). */
+async function syncAdsAndTotals(softwareId: string, account: string, token: string, version: string) {
+  const base = `https://graph.facebook.com/${version}/${account}`;
+  const ads = await metaGetAll<{ id: string; name?: string; campaign_id?: string; effective_status?: string; adset?: { name?: string }; creative?: { object_type?: string } }>(
+    `${base}/ads?${new URLSearchParams({ fields: "id,name,campaign_id,effective_status,adset{name},creative{object_type}", limit: "200", access_token: token })}`);
+  for (const a of ads) {
+    if (!a.id || !a.campaign_id) continue;
+    const name = a.name ?? a.id;
+    const values = {
+      softwareId, campaignId: a.campaign_id, name, adsetName: a.adset?.name ?? null, status: a.effective_status ?? null,
+      format: (a.creative?.object_type ?? "").toUpperCase() === "VIDEO" || /V[IÍ]DEO/i.test(name) ? "video" : "imagem", updatedAt: new Date(),
+    };
+    await db.insert(schema.metaAds).values({ adId: a.id, ...values }).onConflictDoUpdate({ target: schema.metaAds.adId, set: values });
+  }
+  const totals = await metaGetAll<{ campaign_id: string; spend?: string; impressions?: string; reach?: string; frequency?: string; date_start?: string; date_stop?: string }>(
+    `${base}/insights?${new URLSearchParams({ level: "campaign", date_preset: "maximum", fields: "campaign_id,spend,impressions,reach,frequency", limit: "200", access_token: token })}`);
+  for (const t of totals) {
+    const values = {
+      softwareId, since: t.date_start ?? null, until: t.date_stop ?? null, spendCents: Math.round(Number(t.spend ?? 0) * 100),
+      impressions: Number(t.impressions ?? 0), reach: Number(t.reach ?? 0), frequency: t.frequency ?? null, updatedAt: new Date(),
+    };
+    await db.insert(schema.metaCampaignTotals).values({ campaignId: t.campaign_id, ...values }).onConflictDoUpdate({ target: schema.metaCampaignTotals.campaignId, set: values });
+  }
 }
 
 /** Importação de CSV exportado do Gestor de Anúncios (alternativa à API). */

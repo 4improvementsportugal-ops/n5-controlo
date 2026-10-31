@@ -272,8 +272,34 @@ export const campaignDaily = pgTable("campaign_daily", {
   leads: integer("leads").notNull().default(0),
   landingViews: integer("landing_views").notNull().default(0),
   purchases: integer("purchases").notNull().default(0),
+  checkouts: integer("checkouts").notNull().default(0), // foram ao pagamento (InitiateCheckout do píxel)
   frequency: numeric("frequency", { precision: 6, scale: 2 }),
 }, (t) => [uniqueIndex("campaign_daily_uniq").on(t.campaignId, t.adsetName, t.adName, t.date)]);
+
+// Estado e formato de cada anúncio, lidos na sincronização da Meta (o que campaign_daily não tem).
+export const metaAds = pgTable("meta_ads", {
+  adId: text("ad_id").primaryKey(),
+  softwareId: text("software_id").notNull().references(() => softwares.id),
+  campaignId: text("campaign_id").notNull(),
+  name: text("name").notNull(),
+  adsetName: text("adset_name"),
+  status: text("status"), // effective_status da Meta: ACTIVE, PAUSED, PENDING_REVIEW, DISAPPROVED, ...
+  format: text("format"), // imagem | video
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index("meta_ads_campaign_idx").on(t.campaignId)]);
+
+// Totais de cada campanha desde o início (o alcance e a frequência não se somam por dia).
+export const metaCampaignTotals = pgTable("meta_campaign_totals", {
+  campaignId: text("campaign_id").primaryKey(),
+  softwareId: text("software_id").notNull().references(() => softwares.id),
+  since: date("since"),
+  until: date("until"),
+  spendCents: integer("spend_cents").notNull().default(0),
+  impressions: integer("impressions").notNull().default(0),
+  reach: integer("reach").notNull().default(0),
+  frequency: numeric("frequency", { precision: 6, scale: 2 }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 // API de Conversões da Meta: quem se inscreveu num site N5 e aceitou os cookies de marketing.
 // Serve para enviar à Meta a compra quando a Stripe a confirmar, com os mesmos identificadores do anúncio.
