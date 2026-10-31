@@ -263,13 +263,49 @@ export const campaignDaily = pgTable("campaign_daily", {
   campaignName: text("campaign_name").notNull(),
   adsetName: text("adset_name").notNull().default(""),
   adName: text("ad_name").notNull().default(""),
+  adsetId: text("adset_id"),
+  adId: text("ad_id"),
   date: date("date").notNull(),
   spendCents: integer("spend_cents").notNull().default(0),
   impressions: integer("impressions").notNull().default(0),
   clicks: integer("clicks").notNull().default(0),
   leads: integer("leads").notNull().default(0),
+  landingViews: integer("landing_views").notNull().default(0),
+  purchases: integer("purchases").notNull().default(0),
   frequency: numeric("frequency", { precision: 6, scale: 2 }),
 }, (t) => [uniqueIndex("campaign_daily_uniq").on(t.campaignId, t.adsetName, t.adName, t.date)]);
+
+// ---------- Orçamentos ABO (campanhas da Meta com orçamento por conjunto) ----------
+export const metaAboCampaigns = pgTable("meta_abo_campaigns", {
+  campaignId: text("campaign_id").primaryKey(),
+  softwareId: text("software_id").notNull().references(() => softwares.id),
+  accountId: text("account_id").notNull(), // act_…
+  name: text("name").notNull(),
+  dailyBudgetCents: integer("daily_budget_cents").notNull(), // o total do dia que as regras repartem
+  aboSince: date("abo_since").notNull(), // os números contam a partir deste dia
+  auto: boolean("auto").notNull().default(true), // desligado: as regras não correm
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const metaBudgetDecisions = pgTable("meta_budget_decisions", {
+  id: serial("id").primaryKey(),
+  runId: text("run_id").notNull(),
+  moment: text("moment").notNull(), // manha | noite
+  campaignId: text("campaign_id").notNull(),
+  adsetId: text("adset_id"),
+  adsetName: text("adset_name"),
+  adName: text("ad_name"),
+  action: text("action").notNull(), // manter | subir | descer | pausar | aviso
+  fromCents: integer("from_cents"),
+  toCents: integer("to_cents"),
+  metric: text("metric"), // compras | leads | visitas | cliques
+  costCents: integer("cost_cents"),
+  reason: text("reason").notNull(),
+  incoming: text("incoming"), // o criativo que entra numa troca
+  applied: boolean("applied").notNull().default(false),
+  errorCode: text("error_code"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index("meta_budget_decisions_campaign").on(t.campaignId, t.createdAt)]);
 
 // ---------- Alertas ----------
 export const alerts = pgTable("alerts", {

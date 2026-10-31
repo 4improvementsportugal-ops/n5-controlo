@@ -6,12 +6,20 @@ import { db, schema } from "@/db";
 // (a Meta ainda corrige esses dados). Precisa de META_ACCESS_TOKEN com ads_read.
 
 interface InsightRow {
-  campaign_id: string; campaign_name: string; adset_name?: string; ad_name?: string; date_start: string;
+  campaign_id: string; campaign_name: string; adset_id?: string; adset_name?: string; ad_id?: string; ad_name?: string; date_start: string;
   spend?: string; impressions?: string; clicks?: string; frequency?: string;
   actions?: { action_type: string; value: string }[];
 }
 
 const LEAD_ACTIONS = new Set(["lead", "offsite_conversion.fb_pixel_lead", "onsite_conversion.lead_grouped", "complete_registration", "offsite_conversion.fb_pixel_complete_registration"]);
+// Visitas à página e compras: a Meta repete o mesmo evento com nomes diferentes, por isso conta-se o primeiro que aparecer.
+const firstAction = (actions: InsightRow["actions"], types: string[]) => {
+  for (const t of types) {
+    const a = (actions ?? []).find((x) => x.action_type === t);
+    if (a) return Math.round(Number(a.value) || 0);
+  }
+  return 0;
+};
 
 export async function syncMetaInsights(days = 28): Promise<{ software: string; rows: number; error?: string }[]> {
   const token = process.env.META_ACCESS_TOKEN;
@@ -26,7 +34,7 @@ export async function syncMetaInsights(days = 28): Promise<{ software: string; r
       const account = sw.metaAdAccountId!.startsWith("act_") ? sw.metaAdAccountId! : `act_${sw.metaAdAccountId}`;
       const params = new URLSearchParams({
         level: "ad", time_increment: "1", limit: "500",
-        fields: "campaign_id,campaign_name,adset_name,ad_name,spend,impressions,clicks,frequency,actions",
+        fields: "campaign_id,campaign_name,adset_id,adset_name,ad_id,ad_name,spend,impressions,clicks,frequency,actions",
         time_range: JSON.stringify({ since, until }), access_token: token,
       });
       let url: string | null = `https://graph.facebook.com/${version}/${account}/insights?${params}`;
@@ -39,9 +47,11 @@ export async function syncMetaInsights(days = 28): Promise<{ software: string; r
           const leads = (r.actions ?? []).filter((a) => LEAD_ACTIONS.has(a.action_type)).reduce((s, a) => s + Number(a.value), 0);
           const values = {
             softwareId: sw.id, accountId: account, campaignId: r.campaign_id, campaignName: r.campaign_name,
-            adsetName: r.adset_name ?? "", adName: r.ad_name ?? "", date: r.date_start,
+            adsetName: r.adset_name ?? "", adName: r.ad_name ?? "", adsetId: r.adset_id ?? null, adId: r.ad_id ?? null, date: r.date_start,
             spendCents: Math.round(Number(r.spend ?? 0) * 100), impressions: Number(r.impressions ?? 0),
             clicks: Number(r.clicks ?? 0), leads, frequency: r.frequency ?? null,
+            landingViews: firstAction(r.actions, ["landing_page_view"]),
+            purchases: firstAction(r.actions, ["offsite_conversion.fb_pixel_purchase", "purchase"]),
           };
           await db.insert(schema.campaignDaily).values(values).onConflictDoUpdate({
             target: [schema.campaignDaily.campaignId, schema.campaignDaily.adsetName, schema.campaignDaily.adName, schema.campaignDaily.date],
